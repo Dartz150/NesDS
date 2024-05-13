@@ -342,7 +342,7 @@ void dealrawpcm(unsigned char *out)
 
 void APUSoundWrite(Uint address, Uint value);	//from s_apu.c (skip using read handlers, just write it directly)
 
-void fifointerrupt(u32 msg, void *none)					//This should be registered to a fifo channel.
+void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo channel.
 {
 	switch(msg&0xff) {
 		case FIFO_APU_PAUSE:
@@ -407,6 +407,7 @@ void nesmain() {
 	
 	resetAPU();
 	NESVolume(0);
+
 	
 	swiWaitForVBlank();
 	initsound();

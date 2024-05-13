@@ -25,21 +25,30 @@ static int apuirq = 0;
 /*  NES INTERNAL SOUND(APU)  */
 /* ------------------------- */
 
-typedef struct {
-	Uint32 counter;				/* length counter */
-	Uint8 clock_disable;	/* length counter clock disable */
+/*/ Lenght Counter /*/
+// Provides automatic duration control for the NES APU waveform channels ($4015 ~ $400F)
+typedef struct 
+{
+	Uint32 counter;			/* length counter */
+	Uint8 clock_disable;	/* length counter clock disable ($4015) */
 } LENGTHCOUNTER;
-typedef struct {
-	Uint32 cpf;			/* cycles per frame (240Hz fix) */
-	Uint32 fc;			/* frame counter; */
-	Uint8 load;			/* length counter load register */
-	Uint8 start;		/* length counter start */
-	Uint8 counter;		/* length counter */
-	Uint8 tocount;		/* length counter go to count mode */
-	Uint8 mode;			/* length counter mode load(0) count(1) */
+
+// Linear Counter
+typedef struct 
+{
+	Uint32 cpf;				/* cycles per frame (240Hz fix) */
+	Uint32 fc;				/* frame counter; */
+	Uint8 load;				/* length counter load register */
+	Uint8 start;			/* length counter start */
+	Uint8 counter;		    /* length counter */
+	Uint8 tocount;		    /* length counter go to count mode */
+	Uint8 mode;			    /* length counter mode load(0) count(1) */
 	Uint8 clock_disable;	/* length counter clock disable */
 } LINEARCOUNTER;
-typedef struct {
+
+// Envelope Decay
+typedef struct 
+{
 	Uint8 disable;			/* envelope decay disable */
 	Uint8 counter;			/* envelope decay counter */
 	Uint8 rate;				/* envelope decay rate */
@@ -47,7 +56,10 @@ typedef struct {
 	Uint8 looping_enable;	/* envelope decay looping enable */
 	Uint8 volume;			/* volume */
 } ENVELOPEDECAY;
-typedef struct {
+
+// Sweep
+typedef struct 
+{
 	Uint8 ch;				/* sweep channel */
 	Uint8 active;			/* sweep active */
 	Uint8 rate;				/* sweep rate */
@@ -56,81 +68,87 @@ typedef struct {
 	Uint8 shifter;			/* sweep shifter */
 } SWEEP;
 
-typedef struct {
+typedef struct 
+{
 	LENGTHCOUNTER lc;
 	ENVELOPEDECAY ed;
 	SWEEP sw;
 	Uint32 mastervolume;
-	Uint32 cps;		/* cycles per sample */
-	Uint32 *cpf;	/* cycles per frame (240/192Hz) ($4017.bit7) */
-	Uint32 fc;		/* frame counter; */
-	Uint32 wl;		/* wave length */
-	Uint32 pt;		/* programmable timer */
-	Uint8 st;		/* wave step */
-	Uint8 fp;		/* frame position */
-	Uint8 duty;		/* duty rate */
+	Uint32 cps;				/* cycles per sample */
+	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
+	Uint32 fc;				/* frame counter; */
+	Uint32 wl;				/* wave length */
+	Uint32 pt;				/* programmable timer */
+	Uint8 st;				/* wave step */
+	Uint8 fp;				/* frame position */
+	Uint8 duty;				/* duty rate */
 	Uint8 key;
 	Uint8 mute;
 } NESAPU_SQUARE;
-typedef struct {
-	LENGTHCOUNTER lc;
-	LINEARCOUNTER li;
-	Uint32 mastervolume;
-	Uint32 cps;		/* cycles per sample */
-	Uint32 *cpf;	/* cycles per frame (240/192Hz) ($4017.bit7) */
-	Uint32 fc;		/* frame counter; */
-	Uint32 wl;		/* wave length */
-	Uint32 pt;		/* programmable timer */
-	Uint8 st;		/* wave step */
-	Uint8 fp;		/* frame position; */
+
+typedef struct 
+{
+	LENGTHCOUNTER lc;		/* lenght counter */
+	LINEARCOUNTER li;		/* linear counter */
+	Uint32 mastervolume;	/* master volume (0x0 ~ +0x3FF) */
+	Uint32 cps;				/* cycles per sample */
+	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
+	Uint32 fc;				/* frame counter; */
+	Uint32 wl;				/* wave length */
+	Uint32 pt;				/* programmable timer */
+	Uint8 st;				/* wave step */
+	Uint8 fp;				/* frame position; */
 	Uint8 key;
 	Uint8 mute;
 } NESAPU_TRIANGLE;
-typedef struct {
+
+typedef struct 
+{
 	LENGTHCOUNTER lc;
 	LINEARCOUNTER li;
 	ENVELOPEDECAY ed;
 	Uint32 mastervolume;
-	Uint32 cps;		/* cycles per sample */
-	Uint32 *cpf;	/* cycles per frame (240/192Hz) ($4017.bit7) */
-	Uint32 fc;		/* frame counter; */
-	Uint32 wl;		/* wave length */
-	Uint32 pt;		/* programmable timer */
+	Uint32 cps;				/* cycles per sample */
+	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
+	Uint32 fc;				/* frame counter; */
+	Uint32 wl;				/* wave length */
+	Uint32 pt;				/* programmable timer */
 	Uint32 rng;
 	Uint8 rngshort;
-	Uint8 fp;		/* frame position; */
+	Uint8 fp;				/* frame position; */
 	Uint8 key;
 	Uint8 mute;
 } NESAPU_NOISE;
 
-typedef struct {
-	Uint32 cps;		/* cycles per sample */
-	Uint32 wl;		/* wave length */
-	Uint32 pt;		/* programmable timer */
-	Uint32 length;	/* bit length */
+typedef struct 
+{
+	Uint32 cps;				/* cycles per sample */
+	Uint32 wl;				/* wave length */
+	Uint32 pt;				/* programmable timer */
+	Uint32 length;			/* bit length */
 	Uint32 mastervolume;
-	Uint32 adr;		/* current address */
+	Uint32 adr;				/* current address */
 	Int32 dacout;
 	Int32 dacout0;
-
 	Uint8 start_length;
 	Uint8 start_adr;
 	Uint8 loop_enable;
 	Uint8 irq_enable;
 	Uint8 irq_report;
-	Uint8 input;	/* 8bit input buffer */
+	Uint8 input;			/* 8bit input buffer */
 	Uint8 first;
 	Uint8 dacbase;
 	Uint8 key;
 	Uint8 mute;
 } NESAPU_DPCM;
 
-typedef struct {
+typedef struct 
+{
 	NESAPU_SQUARE square[2];
 	NESAPU_TRIANGLE triangle;
 	NESAPU_NOISE noise;
 	NESAPU_DPCM dpcm;
-	Uint32 cpf[3];	/* cycles per frame (240/192Hz) ($4017.bit7) */
+	Uint32 cpf[3];			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint8 regs[0x20];
 } APUSOUND;
 
@@ -139,32 +157,36 @@ Int32 NSF_dpcm_volume = 0;
 
 static APUSOUND apu;
 
-static const Uint8 square_duty_table[4] = { 2, 4, 8, 12};
-
-static const Uint8 vbl_length_table[32] = {
-	0x05, 0x7F, 0x0A, 0x01, 0x14, 0x02, 0x28, 0x03,
-	0x50, 0x04, 0x1E, 0x05, 0x07, 0x06, 0x0E, 0x07,
-	0x06, 0x08, 0x0C, 0x09, 0x18, 0x0A, 0x30, 0x0B,
-	0x60, 0x0C, 0x24, 0x0D, 0x08, 0x0E, 0x10, 0x0F,
+// Square Duty effect table
+static const Uint8 square_duty_table[4] = 
+{ 
+	0x02, 0x04, 0x08, 0x0C
 };
 
-static const Uint32 wavelength_converter_table[16] = {
-	0x002, 0x004, 0x008, 0x010, 0x020, 0x030, 0x040, 0x050,
-	0x065, 0x07f, 0x0be, 0x0fe, 0x17d, 0x1fc, 0x3f9, 0x7f2
+
+static const Uint8 vbl_length_table[32] = 
+{
+	0x05, 0x7F, 0x0A, 0x01, 0x13, 0x02, 0x28, 0x03,
+	0x50, 0x04, 0x1E, 0x05, 0x07, 0x06, 0x0D, 0x07,
+	0x06, 0x08, 0x0C, 0x09, 0x18, 0x0A, 0x30, 0x0B,
+	0x60, 0x0C, 0x24, 0x0D, 0x08, 0x0E, 0x10, 0x0F
+};
+
+static const Uint32 wavelength_converter_table[16] =
+{
+	0x004, 0x008, 0x010, 0x020, 0x040, 0x060, 0x080, 0x0A0,
+	0x0CA, 0x0FE, 0x17C, 0x1FC, 0x2FA, 0x3F8, 0x7F2, 0xFFC
 };
 
 static const Uint32 spd_limit_table[8] =
 {
-	0x3FF, 0x555, 0x666, 0x71C, 
-	0x787, 0x7C1, 0x7E0, 0x7F0,
+	0x3FF, 0x555, 0x666, 0x71C, 0x787, 0x7C1, 0x7E0, 0x7F0
 };
 
 static Uint32 dpcm_freq_table[16] =
 {
-	428, 380, 340, 320,
-	286, 254, 226, 214,
-	190, 160, 142, 128,
-	106,  85,  72,  54,
+	0x1AC, 0x17C, 0x154, 0x140, 0x11E, 0x0FE, 0x0E2, 0x0D6,
+	0x0BE, 0x0A0, 0x08E, 0x080, 0x06A, 0x055, 0x048, 0x036
 };
 
 __inline static void LengthCounterStep(LENGTHCOUNTER *lc)
@@ -301,8 +323,8 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 #if 0
 		/*
 			(Japanese:sjis memo)
-			—ó‰Î‚È‚Ç‚Ì’á‰¹ŽOŠp”g‚ðƒJƒbƒg‚µ‚½‚¢ê‡—LŒø‰»‚·‚éB
-			Vƒtƒ@ƒ~‚Å‚Í”­º‚ðŠm”FB
+			ï¿½ï¿½Î‚È‚Ç‚Ì’á‰¹ï¿½Oï¿½pï¿½gï¿½ï¿½ï¿½Jï¿½bï¿½gï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ê‡ï¿½Lï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
+			ï¿½Vï¿½tï¿½@ï¿½~ï¿½Å‚Í”ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½mï¿½Fï¿½B
 		*/
 		if (ch->wl >= 0x7ff)
 		{
@@ -480,14 +502,14 @@ static void __fastcall APUSoundVolume(Uint volume)
 	volume += (NSF_apu_volume << (LOG_BITS - 8)) << 1;
 
 	/* SND1 */
-	apu.square[0].mastervolume = volume;
-	apu.square[1].mastervolume = volume;
+	apu.square[0].mastervolume = volume - 16;
+	apu.square[1].mastervolume = volume - 16;
 
 	/* SND2 */
-	apu.triangle.mastervolume = volume + ((192 << (LOG_BITS - 8)) << 1);
-	apu.noise.mastervolume = volume + ((192 << (LOG_BITS - 8)) << 1);
+	apu.triangle.mastervolume = volume - 16;
+	apu.noise.mastervolume = volume;
 	volume += (NSF_dpcm_volume << (LOG_BITS - 8)) << 1;
-	apu.dpcm.mastervolume = (volume << 4) + ((192 << (LOG_BITS - 8)) << 1);
+	apu.dpcm.mastervolume = volume;
 }
 
 static NES_VOLUME_HANDLER s_apu_volume_handler[] = {
@@ -556,8 +578,8 @@ void APUSoundWrite(Uint address, Uint value)
 						apu.triangle.li.tocount = 1;
 					/*
 						(Japanese:sjis memo)
-						NESSOUND.TXT‚É€‹’‚µ‚½ŽÀ‘•‚¾‚Æ
-						Just Breed/Super Mario Bros. 3‚ÅˆÙí
+						NESSOUND.TXTï¿½Éï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+						Just Breed/Super Mario Bros. 3ï¿½ÅˆÙï¿½
 						no chane->load
 					*/
 					apu.triangle.li.mode = 0;
