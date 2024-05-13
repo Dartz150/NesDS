@@ -6,13 +6,13 @@
 
 #define SHIFT_BITS 8
 
-static Uint frequency = 44100;
+static Uint frequency = 48000;
 static Uint channel = 1;
 
 static NES_AUDIO_HANDLER *nah = 0;
 static NES_VOLUME_HANDLER *nvh = 0;
 
-static Uint naf_type = NES_AUDIO_FILTER_LOWPASS;
+static Uint naf_type = NES_AUDIO_FILTER_NONE;
 static Uint32 naf_prev;
 
 void NESAudioFilterSet(Uint filter)
