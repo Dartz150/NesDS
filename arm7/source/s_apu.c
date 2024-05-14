@@ -182,11 +182,11 @@ static const Uint8 noise_time_period_table_ntsc[16] =
 };
 
 // TODO: APU Noise Time Period LUT PAL ($400E)
-// static const Uint8 noise_time_period_table_pal[16] =
-// {
-// 0x004, 0x008, 0x00E, 0x01E, 0x03C, 0x058, 0x076, 0x094,
-// 0x0BC, 0x0EC, 0x162, 0x1D8, 0x2C4, 0x3B0, 0x762, 0xEC2
-// };
+static const Uint8 noise_time_period_table_pal[16] =
+{
+0x004, 0x008, 0x00E, 0x01E, 0x03C, 0x058, 0x076, 0x094,
+0x0BC, 0x0EC, 0x162, 0x1D8, 0x2C4, 0x3B0, 0x762, 0xEC2
+};
 
 static const Uint32 spd_limit_table[8] =
 {
@@ -519,14 +519,14 @@ static void __fastcall APUSoundVolume(Uint volume)
 	volume += (NSF_apu_volume << (LOG_BITS - 8)) << 1;
 
 	/* SND1 */
-	apu.square[0].mastervolume = volume - 32;
-	apu.square[1].mastervolume = volume - 32;
+	apu.square[0].mastervolume = volume;
+	apu.square[1].mastervolume = volume;
 
 	/* SND2 */
-	apu.triangle.mastervolume = volume - 32;
-	apu.noise.mastervolume = volume;
+	apu.triangle.mastervolume = + ((192 << (LOG_BITS - 8)) << 1);
+	apu.noise.mastervolume = volume + ((192 << (LOG_BITS - 8)) << 1);
 	volume += (NSF_dpcm_volume << (LOG_BITS - 8)) << 1;
-	apu.dpcm.mastervolume = volume - 32;
+	apu.dpcm.mastervolume = (volume << 4) + ((192 << (LOG_BITS - 8)) << 1);
 }
 
 static NES_VOLUME_HANDLER s_apu_volume_handler[] = {
@@ -651,27 +651,27 @@ void APUSoundWrite(Uint address, Uint value)
 			// Envelope loop/lenght counter halt/envelope ($400C)
 			case 0x400c:
 				if (value & 0x10)
-					apu.noise.ed.volume = value & 0x0f;
+					apu.noise.ed.volume = value & 0x0F;
 				else
 				{
 					apu.noise.ed.rate = value & 0x0F;
 				}
 				apu.noise.ed.disable = value & 0x10;
 				apu.noise.lc.clock_disable = value & 0x20;
-				apu.noise.ed.looping_enable = (value & 0x20) >> 4;
+				apu.noise.ed.looping_enable = value & 0x20;
 				break;
 
 			// Loop noise/period ($400E)
 			case 0x400e:
-				apu.noise.wl = noise_time_period_table_ntsc[value & 0x0f];
+				apu.noise.wl = noise_time_period_table_pal[value & 0x0f];
 				apu.noise.rngshort = value & 0x80;
 				break;
 
 			// Length counter load ($400F)
 			case 0x400f:
-				apu.noise.rng = 0x80;
+				// apu.noise.rng = 0x80;
 				apu.noise.ed.counter = 0xf;
-				apu.noise.lc.counter = vbl_length_table[(value >> 3) & 0x1f];
+				apu.noise.lc.counter = vbl_length_table[value >> 3];
 				break;
             
 			//***DMC ($4010–$4013)***//
