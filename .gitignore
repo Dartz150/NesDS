@@ -46,7 +46,10 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+#VSC files
+.vscode/settings.json
 
+#Build
 *.elf
 *.nds
 arm7/build/*
