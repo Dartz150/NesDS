@@ -1,6 +1,7 @@
 @---------------------------------------------------------------------------------
 	#include "equates.h"
 @---------------------------------------------------------------------------------
+	.global mapper9init
 	.global mapper10init
 	.global mapper9init
 
@@ -45,10 +46,11 @@ mapper10init:
 	adr r0, chrlatch2
 	str_ r0, ppuChrLatch
 
-	ldmfd sp!, {pc}
+	mov r0,#-1
+	b map89ABCDEF_		@everything to last bank
 
 @---------------------------------------------------------------------------------
-mapper9init:
+mapper10init:
 @---------------------------------------------------------------------------------
 	.word empty_W, writeAB, write, write
 	stmfd sp!, {lr}
@@ -99,17 +101,22 @@ write:
 	cmp r1, #0xA000
 	beq map89AB_
 	cmp r1, #0xB000
-	bne c
+	bne c000
 	strb_ r0, reg0
 	ldrb_ r2, latch_a
 	cmp r2, #0xFD
 	beq chr0123_
 	bx lr
 
-c:
+b000: @-------------------------
+	strb_ r0,reg0
+	mov pc,lr
+c000: @-------------------------
 	cmp r1, #0xC000
-	bne d
-	strb_ r0, reg1
+	bne d000
+
+	strb_ r0,reg1
+	b chr0123_
 	ldrb_ r2, latch_a
 	cmp r2, #0xFE
 	beq chr0123_
@@ -117,7 +124,7 @@ c:
 
 d:
 	cmp r1, #0xD000
-	bne e
+	bne e000
 	strb_ r0, reg2
 	ldrb_ r2, latch_b
 	cmp r2, #0xFD
@@ -126,7 +133,9 @@ d:
 
 e:
 	cmp r1, #0xE000
-	bne f
+	bne f000
+	tst addy,#0x1000
+	bne f000
 	strb_ r0, reg3
 	ldrb_ r2, latch_b
 	cmp r2, #0xFE
@@ -136,8 +145,25 @@ e:
 f:
 	tst r0, #1
 	b mirror2V_
-
-
+@------------------------------
+@mapper_9_hook:
+@---------------------------------------------------------------------------------
+@	ldr_ r0,scanline
+@	sub r0,r0,#1
+@	tst r0,#7
+@	ble h9
+@	cmp r0,#239
+@	bhi h9
+@
+@	ldr r2,=latchtbl
+@	ldrb r0,[r2,r0,lsr#3]
+@
+@	cmp r0,#0xfd
+@	ldreqb_ r0,reg2
+@	ldrneb_ r0,reg3
+@	bl chr4567_
+@h9:
+@	fetch 0
 @---------------------------------------------------------------------------------
 frameHook:
 	stmfd sp!, {r3-r9}
@@ -180,9 +206,13 @@ latlp:
 	streqb_ r5, latch_a
 	strneb_ r5, latch_b
 
+@	ldreqb_ r2,reg2
+@	ldrneb_ r2,reg3
+@	beq chr4567_
+
 	ldr r9, =currentBG
 	ldr r8, [r9]			@get the current bg.
-	adr r7, bgchrdata		@to check if the chrbg is cached...
+	adr r7, latchtbl		@to check if the chrbg is cached...
 	ldrb r4, [r7, r8, lsr#3]
 
 rechr:

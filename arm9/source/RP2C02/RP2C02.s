@@ -5,6 +5,7 @@
 //	#include "RP2C02.i"
 	#include "equates.h"
 @---------------------------------------------------------------------------------
+	.global scaletable
 	.global PPU_init
 	.global PPU_reset
 	.global PPU_R
@@ -17,10 +18,15 @@
 	.global vram_map
 	.global vram_write_tbl
 	.global VRAM_chr
+	.global remap_pal
 	.global paletteinit
+	.global PaletteTxAll
+	.global Update_Palette
 	.global newframe
 	.global agb_pal
 	.global writeBG
+	.global gammavalue
+	.global nes_rgb
 	.global ctrl1_W
 	.global EMU_VBlank
 	.global ppusync
@@ -41,6 +47,7 @@
 	.global chr0123_
 	.global chr4567_
 	.global chr01234567_
+	.global cram1k
 	.global updateBGCHR
 	.global updateOBJCHR
 	.global mirror1H_
@@ -53,13 +60,21 @@
 	.global agb_bg_map
 	.global resetCHR
 	.global writeCHRTBL
+	@.global unpack_tiles
 	.global chr1k
 	.global chr2k
+	.global nes_nt0
+	.global DMAline
 	.global currentBG
+	.global nextBG
 	.global agb_bg_map
 	.global agb_obj_map
+	.global dispcnt
+	.global spchr_update
 	.global nes_palette
 	.global vromnt1k
+	.global gfx_scale
+	.global nespal
 
 @---------------------------------------------------------------------------------
 .section .text,"ax"
@@ -197,6 +212,7 @@ gloop:					@map 0bbbbbgggggrrrrr  ->  0bbbbbgggggrrrrr
 
 	ldmfd sp!,{r4-r8,lr}
 	bx lr
+
 @---------------------------------------------------------------------------------
 gammaconvert:@	takes value in r0(0-0xFF), gamma in r1(0-4),returns new value in r0=0x1F
 @---------------------------------------------------------------------------------
@@ -1127,8 +1143,14 @@ writeBG:		@loadcart jumps here
 	and r1,r1,#0xf000
 	orr r1,r0,r1
 	strh r1,[r2,addy]	@write tile#
+	
+	cmp r0,#0xfd	@mapper 9 shit..
+	bhs mapper9BGcheck
+
 	bx lr
 writeAttrib:
+
+writeattrib:
 	stmfd sp!,{r3,r4,lr}
 
 	orr r0,r0,r0,lsl#16

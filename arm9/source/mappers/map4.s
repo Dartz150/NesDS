@@ -12,6 +12,8 @@
 	.global mmc3CounterW
 	.global mmc3IrqEnableW
 	.global mmc3HSync
+	.global mapper119init
+	.global mapper249init
 
 	irq_latch	= mapperData+0
 	irq_enable	= mapperData+1
@@ -44,10 +46,43 @@
 
 	irq_request	= mapperData+24
 
+	reg0 = mapperdata
+	reg1 = mapperdata+1
+	reg2 = mapperdata+2
+	reg3 = mapperdata+3
+	reg4 = mapperdata+4
+	reg5 = mapperdata+5
+	reg6 = mapperdata+6
+	reg7 = mapperdata+7
+	
+	chr01 = mapperdata+8
+	chr23 = mapperdata+9
+	chr4  = mapperdata+10
+	chr5  = mapperdata+11
+	chr6  = mapperdata+12
+	chr7  = mapperdata+13
+	
+	prg0  = mapperdata+14
+	prg1  = mapperdata+15
+	
+	irq_enable	= mapperdata+16
+	irq_counter	= mapperdata+17
+	irq_latch	= mapperdata+18
+	irq_request	= mapperdata+19
+	vs_patch	= mapperdata+20
+	vs_index	= mapperdata+21
+	we_sram		= mapperdata+22
+	irq_type	= mapperdata+23
+	
+	irq_preset	= mapperdata+24
+	irq_preset_vbl	= mapperdata+25
+	
 @---------------------------------------------------------------------------------
 .section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper4init:
+mapper119init:
+mapper249init:
 @---------------------------------------------------------------------------------
 	.word mmc3MappingW, mmc3MirrorW, mmc3CounterW, mmc3IrqEnableW
 	stmfd sp!, {lr}
@@ -246,7 +281,6 @@ mmc3MirrorW:		@ A000-BFFF
 @------------------------------------
 	tst addy, #1
 	bne wa001
-
 	strb_ r0, reg2
 	ldrb_ r1, cartFlags
 	tst r1, #SCREEN4
@@ -262,10 +296,8 @@ wa001:				@ WRAM enable
 mmc3CounterW:		@ C000-DFFF
 @------------------------------------
 	tst addy, #1
-
 	streqb_ r0, irq_latch
 	bxeq lr
-
 	mov r0, #1
 	strb_ r0, irq_reload
 	bx lr
@@ -364,3 +396,77 @@ hSyncRAMBO1:
 	ldrb_ r0, irq_request
 	b rp2A03SetIRQPin
 @--------
+skip1:
+	cmp r2, #MMC3_IRQ_ROCKMAN3
+	bne skip2
+	cmp r0, #240
+	bcs 0f
+	tst r1, #0x18
+	beq 0f
+	
+	ldrb_ r0, irq_enable
+	ands r0, r0, r0
+	beq 0f
+
+	ldrb_ r2, irq_counter
+	subs r2, r2, #1
+	strb_ r2, irq_counter
+	bne 0f
+	
+	mov r0, #0xff
+	strb_ r0, irq_request
+	ldrb_ r0, irq_latch
+	strb_ r0, irq_counter
+	
+0:
+	ldrb_ r0, irq_request
+	ands r0, r0, r0
+	beq hq
+	b CheckI
+@--------
+skip2:
+	cmp r0, #240
+	bcs hq
+	tst r1, #0x18
+	beq hq
+	
+	mov r2, #0
+	ldrb_ r1, irq_preset_vbl
+	ands r1, r1, r1
+	ldrneb_ r1, irq_latch
+	strneb_ r1, irq_counter
+	strneb_ r2, irq_preset_vbl
+	
+	ldrb_ r1, irq_preset
+	ands r1, r1, r1
+	beq 0f
+	
+	ldrb_ r1, irq_latch
+	strb_ r1, irq_counter
+	strb_ r2, irq_preset
+	
+	ldrb_ r2, irq_type
+	cmp r2, #MMC3_IRQ_DAI2JISUPER
+	cmpeq r0, #0
+	subeq r1, r1, #1
+	@streqb_ r1, irq_counter
+	b 1f
+	
+0:
+	ldrb_ r1, irq_counter
+	subs r1, r1, #1
+	movcc r1, #0
+1:
+	strb_ r1, irq_counter
+	ands r1, r1, r1
+	bne hq
+	
+	mov r2, #0xFF
+	strb_ r2, irq_preset
+	
+	ldrb_ r1, irq_enable
+	ands r1, r1, r1
+	strneb_ r2, irq_request
+	bne CheckI
+hq:
+	fetch 0

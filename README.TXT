@@ -316,7 +316,7 @@ mappers supported: 0, 1, 2, 3, 4, 10, 16, 19, 74, 246 (EX's mapper files is very
 function added: cheat
 
 
-CHANGES£º
+CHANGESï¿½ï¿½
 --------
 Touch screen should work better now
 Fixed bug that was causing ARM7 to crash on emulators (ideas and desemu inputs were not working) 

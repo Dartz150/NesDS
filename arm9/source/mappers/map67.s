@@ -82,4 +82,7 @@ map67_IRQ_Hook:
 	mov r0,r0,lsr#16
 	str_ r0,countdown
 	b rp2A03SetIRQPin
+	b CheckI
+hk0:
+	fetch 0
 @---------------------------------------------------------------------------------
