@@ -1,10 +1,11 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
 @---------------------------------------------------------------------------------
 	.global mapper91init
+
+	irqEnable	= mapperData
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper91init:
 @---------------------------------------------------------------------------------
@@ -34,10 +35,10 @@ mapper91init:
 	bl chr7_
 
 	adr r0, hsync
-	str_ r0,scanlinehook
+	str_ r0,scanlineHook
 	
 	adr r1,writel
-	str_ r1,writemem_tbl+12
+	str_ r1,m6502WriteTbl+12
 	
 	ldmfd sp!, {pc}
 @---------------------------------------------------------------------------------
@@ -51,22 +52,24 @@ writel:
 
 addhi:
 	cmp addy, #0x8000
-	movcs pc, lr
-	and r2, addy, #3
-	cmp r2, #0
+	bxcs lr
+	ands r2, addy, #3
 	beq map89_
-	cmp r2, #1
-	beq mapAB_
-	mov pc, lr
-
+	cmp r2, #2
+	bmi mapAB_
+	moveq r0,#0
+	movne r0,#1
+	strb_ r0,irqEnable
+	beq rp2A03SetIRQPin
+	bx lr
 
 @---------------------------------------------------------------------------------
 hsync:
 	ldr_ r0, scanline
 	cmp r0, #240
-	bcs hk
+	bxcs lr
 
 	ands r0, r0, #7
-	beq CheckI
-hk:
-	fetch 0
+	bxne lr
+	mov r0,#1
+	b rp2A03SetIRQPin

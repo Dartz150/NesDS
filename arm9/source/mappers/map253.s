@@ -1,53 +1,50 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
 @---------------------------------------------------------------------------------
 	.global mapper253init
-	.global debugwrite
-	reg	= mapperdata+0
-	reg0	= mapperdata+0
-	reg1	= mapperdata+1
-	reg2	= mapperdata+2
-	reg3	= mapperdata+3
-	reg4	= mapperdata+4
-	reg5	= mapperdata+5
-	reg6	= mapperdata+6
-	reg7	= mapperdata+7
-	irq_enable = mapperdata+16
-	irq_counter= mapperdata+17
-	irq_latch = mapperdata+18
-	irq_clock = mapperdata+19
+
+	latch = mapperData+0
+	irqen = mapperData+1
+	k4irq = mapperData+2
+	counter = mapperData+3
+
+	reg0	= mapperData+0
+	reg1	= mapperData+1
+	reg2	= mapperData+2
+	reg3	= mapperData+3
+	reg4	= mapperData+4
+	reg5	= mapperData+5
+	reg6	= mapperData+6
+	reg7	= mapperData+7
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper253init:
 @---------------------------------------------------------------------------------
 	.word write89, writeAB, writeCD, writeEF
 	
 	ldr r0, =0x0100
-	str_ r0, reg
+	str_ r0, reg0
 	ldr r0, =0x0302
-	str_ r0, reg + 4
+	str_ r0, reg4 + 4
 	ldr r0, =0x0504
-	str_ r0, reg + 8
+	str_ r0, reg0 + 8
 	ldr r0, =0x0706
-	str_ r0, reg + 12
-
-	adr r0, hook
-	str_ r0, scanlinehook
+	str_ r0, reg0 + 12
 
 	stmfd sp!, {lr}
-	
+	bl Konami_Init
+
 	mov r0, #0
 	bl chr01234567_
 
-	ldr r0,=VRAM_chr				@enable/disable chr write
-	ldr r1,=vram_write_tbl			@ set the first 8 function pointers to 'void'?
+	ldr r0,=VRAM_chr				@enable chr write
+	ldr r1,=vram_write_tbl
 	mov r2,#8
 	bl filler
 
-	adr r0, framehook
-	str_ r0, newframehook
+	adr r0, frameHook
+	str_ r0, newFrameHook
 
 	ldmfd sp!, {pc}
 
@@ -58,7 +55,7 @@ write89:
 	beq map89_
 	ldr r1, =0x9400
 	cmp addy, r1
-	movne pc, lr
+	bxne lr
 	and r0, r0, #3
 	tst r0, #2
 	beq 0f
@@ -74,7 +71,7 @@ writeAB:
 	cmp r1, addy
 	beq mapAB_
 	tst addy, #0x1000
-	moveq pc, lr
+	bxeq lr
 
 writeppu:
 	mov r2, addy, lsr#12
@@ -105,58 +102,11 @@ writeEF:
 
 	and r1, addy, #0xc
 	ldr pc, [pc, r1]
-	mov r0, r0
-	.word f000, f0004, f0008, void
-f000:
-	ldrb_ r1, irq_latch
-	and r1, r1, #0xF0
-	and r0, r0, #0xF
-	orr r0, r1, r0
-	strb_ r0, irq_latch
-	mov pc, lr
-f0004:
-	ldrb_ r1, irq_latch
-	and r1, r1, #0xF
-	orr r0, r1, r0, lsl#4
-	strb_ r0, irq_latch
-f0008:
-	strb_ r0, irq_enable
-	tst r0, #2
-	moveq pc, lr
-	ldrb_ r1, irq_latch
-	strb_ r1, irq_counter
-	mov r0, #0
-	strb_ r0, irq_clock
-	mov pc, lr
-
-@---------------------------------------------------------------------------------
-hook:
-	ldrb_ r0,ppuctrl1
-	orr r0, r0, #0x18
-	strb_ r0,ppuctrl1		@NOT let bg or sp to hide...
-
-	ldrb_ r0, irq_enable
-	tst r0, #2
-	beq hk0
-
-	ldrb_ r1, irq_counter
-	add r1, r1, #1
-	tst r1, #0xFF
-	strneb_ r1, irq_counter
-	bne hk0
-
-	tst r0, #1
-	moveq r0, #0
-	strb_ r0, irq_enable
-	ldrb_ r1, irq_latch
-	strb_ r1, irq_counter
-	b CheckI
-
-hk0:
-	fetch 0
+	nop
+	.word KoLatchLo, KoLatchHi, KoIRQEnable, KoIRQack
 
 @------------------------
-framehook:
+frameHook:
 	mov r0,#-1
 	ldr r1,=agb_obj_map
 	str r0,[r1],#4

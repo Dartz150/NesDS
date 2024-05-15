@@ -1,52 +1,51 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
-@---------------------------------------------------------------------------------	
+@---------------------------------------------------------------------------------
 	.global mapper90init
-	irq_latch = mapperdata
-	irq_occur = mapperdata + 1
-	irq_enable = mapperdata + 2
-	irq_counter = mapperdata + 3
-	irq_preset = mapperdata + 4
-	irq_offset	= mapperdata + 5		@shoud be fixed???
+	irq_latch = mapperData
+	irq_occur = mapperData + 1
+	irq_enable = mapperData + 2
+	irq_counter = mapperData + 3
+	irq_preset = mapperData + 4
+	irq_offset	= mapperData + 5		@shoud be fixed???
 
-	prg_6000	= mapperdata + 8
-	prg_E000	= mapperdata + 9
-	prg_size	= mapperdata + 10
-	chr_size	= mapperdata + 11
+	prg_6000	= mapperData + 8
+	prg_E000	= mapperData + 9
+	prg_size	= mapperData + 10
+	chr_size	= mapperData + 11
 
-	mir_mode	= mapperdata + 12
-	mir_type	= mapperdata + 13
+	mir_mode	= mapperData + 12
+	mir_type	= mapperData + 13
 
-	key_val		= mapperdata + 16
-	mul_val1	= mapperdata + 17
-	mul_val2	= mapperdata + 18
+	key_val		= mapperData + 16
+	mul_val1	= mapperData + 17
+	mul_val2	= mapperData + 18
 
-	mul_ret		= mapperdata + 20
+	mul_ret		= mapperData + 20
 
-	prg_reg0	= mapperdata + 24
-	prg_reg1	= mapperdata + 25
-	prg_reg2	= mapperdata + 26
-	prg_reg3	= mapperdata + 27
+	prg_reg0	= mapperData + 24
+	prg_reg1	= mapperData + 25
+	prg_reg2	= mapperData + 26
+	prg_reg3	= mapperData + 27
 
-	ch_reg0		= mapperdata + 32
-	ch_reg1		= mapperdata + 36
-	ch_reg2		= mapperdata + 40
-	ch_reg3		= mapperdata + 44
-	ch_reg4		= mapperdata + 48
-	ch_reg5		= mapperdata + 52
-	ch_reg6		= mapperdata + 56
-	ch_reg7		= mapperdata + 60
+	ch_reg0		= mapperData + 32
+	ch_reg1		= mapperData + 36
+	ch_reg2		= mapperData + 40
+	ch_reg3		= mapperData + 44
+	ch_reg4		= mapperData + 48
+	ch_reg5		= mapperData + 52
+	ch_reg6		= mapperData + 56
+	ch_reg7		= mapperData + 60
 
-	nt_reg0		= mapperdata + 64
-	nt_reg1		= mapperdata + 68
-	nt_reg2		= mapperdata + 72
-	nt_reg3		= mapperdata + 76
+	nt_reg0		= mapperData + 64
+	nt_reg1		= mapperData + 68
+	nt_reg2		= mapperData + 72
+	nt_reg3		= mapperData + 76
 
-	patch		= mapperdata + 80
+	patch		= mapperData + 80
 
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper90init:
 @---------------------------------------------------------------------------------
@@ -54,7 +53,7 @@ mapper90init:
 
 	stmfd sp!, {lr}
 
-	ldr_ r0, prgsize8k
+	ldr_ r0, prgSize8k
 	sub r0, r0, #1
 	strb_ r0, prg_reg3
 	sub r0, r0, #1
@@ -86,12 +85,12 @@ mapper90init:
 	strb r0, sw_val			@for multi-in-one switch.
 
 	adr r1, readl
-	str_ r1,readmem_tbl+8
+	str_ r1,rp2A03MemRead
 	adr r1,writel
-	str_ r1,writemem_tbl+8
+	str_ r1,rp2A03MemWrite
 
 	ldr r0,=hbhook
-	str_ r0,scanlinehook
+	str_ r0,scanlineHook
 
 	ldr_ r0, prgcrc
 	ldr r1, =0x9A36
@@ -107,18 +106,18 @@ sw_val:
 writel:
 @---------------------------------------------------------------------------------
 	cmp addy,#0x5000
-	blo IO_W
+	blo empty_W
 	ldr r1, =0x5803
 	cmp addy, r1
 	streqb_ r0, key_val
-	moveq pc, lr
+	bxeq lr
 
 	ldr r1, =0x5800
 	cmp addy, r1
-	movcc pc, lr
+	bxcc lr
 	add r1, r1, #2
 	cmp addy, r1
-	movcs pc, lr
+	bxcs lr
 
 	tst addy, #0x1
 	streqb_ r0, mul_val1
@@ -146,30 +145,30 @@ writel:
 	addne r2, r2, r1, lsl#7
 
 	str_ r2, mul_ret
-	mov pc, lr
+	bx lr
 @---------------------------------------------------------------------------------
 readl:
 @---------------------------------------------------------------------------------
 	cmp addy,#0x5000
-	blo IO_R
+	blo empty_R
 	ldreqb r0, sw_val
 	eoreq r0, r0, #0xFF
-	moveq pc, lr
+	bxeq lr
 	ldr r1, =0x5800
 	cmp addy, r1
 	ldreqb_ r0, mul_ret
-	moveq pc, lr
+	bxeq lr
 	ldr r1, =0x5801
 	cmp addy, r1
 	ldreqb_ r0, mul_ret + 1
-	moveq pc, lr
+	bxeq lr
 	ldr r1, =0x5803
 	cmp addy, r1
 	ldreqb_ r0, key_val
-	moveq pc, lr
+	bxeq lr
 
 	mov r0, addy, lsr#8
-	mov pc, lr
+	bx lr
 
 @---------------------------------------------------------------------------------
 write89:
@@ -179,7 +178,7 @@ write89:
 
 	and addy, addy, #7
 	cmp addy, #4
-	movcs pc, lr
+	bxcs lr
 
 	adrl_ r1, prg_reg0
 	strb r0, [r1, addy]
@@ -221,18 +220,22 @@ writeCD:
 	and r0, r0, r0
 @-----------------
 ctable:
-	.word void, void, wc002, wc003, void, wc005, wc006, void
+	.word wc000, void, wc002, wc003, void, wc005, wc006, void
 @-----------------
+wc000:
+	ands r0,r0,#1
+	strb_ r0, irq_enable
+	beq rp2A03SetIRQPin
+	bx lr
 wc002:
 	mov r0, #0
-	@strb_ r0, irq_enable					@this instruction does not work well...
-	strb_ r0, irq_occur
-	mov pc, lr
+	strb_ r0, irq_enable				@this instruction does not work well...
+	b rp2A03SetIRQPin
 wc003:
 	mov r0, #0xFF
 	strb_ r0, irq_enable
 	strb_ r0, irq_preset
-	mov pc, lr
+	bx lr
 wc005:
 	ldrb_ r1, irq_offset
 	tst r1, #0x80
@@ -244,18 +247,18 @@ wc005:
 	streqb_ r0, irq_latch
 	mov r0, #0xFF
 	strb_ r0, irq_preset
-	mov pc, lr
+	bx lr
 wc006:
 	ldrb_ r1, patch
 	ands r1, r1, r1
-	moveq pc, lr
+	bxeq lr
 	strb_ r0, irq_offset
-	mov pc, lr
+	bx lr
 @-----------------
 wd000:
 	and addy, addy, #0x7
 	cmp addy, #1
-	movhi pc, lr
+	bxhi lr
 	andeq r0, r0, #3
 	streqb_ r0, mir_type
 	beq setbank_vram
@@ -322,7 +325,7 @@ prgset2:
 	ands r0, r0, r0
 	ldrneb_ r0, prg_reg3
 	bne map67_
-	mov pc, lr
+	bx lr
 prgset3:
 	stmfd sp!, {lr}
 	ldrb_ r0, prg_reg3
@@ -420,7 +423,7 @@ vromnt:
 0:
 	moveq r0, #0
 	streqb_ r0, mir_mode
-	moveq pc, lr
+	bxeq lr
 
 	stmfd sp!, {lr}
 	ldr_ r0, nt_reg0
@@ -438,7 +441,7 @@ vromnt:
 
 	mov r0, #0x1C00
 	add r0, r0, #0xc000
-	str_ r0, bg0cnt
+	str_ r0, bg0Cnt
 
 	ldmfd sp!, {pc}
 
@@ -446,11 +449,11 @@ vromnt:
 hbhook:
 @--------------------------------
 	ldr_ r0, scanline
-	ldrb_ r1, ppuctrl1
+	ldrb_ r1, ppuCtrl1
 	cmp r0, #240
-	bcs hk0
+	bxcs lr
 	tst r1, #0x18
-	beq hk0
+	bxeq lr
 
 	ldrb_ r0, irq_counter
 	ldrb_ r1, irq_preset
@@ -463,11 +466,9 @@ hbhook:
 	subs r0, r0, #0x1
 	strcsb_ r0, irq_counter
 
-	bhi hk0
+	bxhi lr
 
 	ldrb_ r0, irq_enable
 	ands r0, r0, r0
-	bne CheckI
-
-hk0:
-	fetch 0
+	bne rp2A03SetIRQPin
+	bx lr

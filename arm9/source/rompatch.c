@@ -1,5 +1,6 @@
 #include <nds.h>
 #include "c_defs.h"
+#include "NesMachine.h"
 
 unsigned int romdb[] = {
 0x0021ed29, 0x0021ed29, 0x00010010,
@@ -3272,7 +3273,7 @@ unsigned int romdb[] = {
 };
 unsigned int crctable[256];
 
-unsigned int romcrc(unsigned char * c, int size)
+unsigned int romcrc(const unsigned char *c, int size)
 {
 	unsigned int r = 0xFFFFFFFFUL;
 	while( --size >= 0 ) {
@@ -3316,9 +3317,9 @@ void romcorrect(char *s)
 				if(oldmapper == newmapper) {
 					rom[6] = tmp & 0xff;			
 					rom[7] = (tmp >> 8) & 0xff;	
-					__emuflags &= ~PALTIMING;		
+					globals.emuFlags &= ~PALTIMING;
 					if(! (tmp & (1 << 16)))		
-						__emuflags |= PALTIMING;
+						globals.emuFlags |= PALTIMING;
 				}
 				break;
 			}

@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "c_defs.h"
+#include "cpu.h"
+#include "NesMachine.h"
+
 //frameskip min = 1, max = xxxxxx....
 int palette_value = 0;
 int soft_frameskip = 3;
@@ -25,7 +28,7 @@ void do_romebd()
 void showversion()
 {
 	memset((void *)(SUB_BG),0,64*3);
-	consoletext(64*2-32,"     nesDS 1.3c ________________________________",0);
+	consoletext(64*2-32,"     nesDS 1.4.0________________________________",0);
 }
 
 /*****************************
@@ -35,7 +38,7 @@ void showversion()
 * description:	NTSC for 60fps, PAL for 50fps. Call this function to sync with NES emulation.
 ******************************/
 void vblankinterrupt() {
-	debuginfo[6]++;
+	debuginfo[VBLS]++;
 	EMU_VBlank();
 	irqDisable(IRQ_VCOUNT);			//we should disable this...
 }
@@ -44,19 +47,6 @@ void aliveinterrupt(u32 msg, void *none)
 {
 	IPC_ALIVE = msg;		//if arm7 still alive, a non-zero value will be received.
 }
-
-/*****************************
-* name:			hblankinterrupt
-* function:		a function to deal with hblank interrupts.
-* argument:		none
-* description:	for emulation
-******************************/
-//extern void  (*__hblankhook)(void);
-extern void hblankinterrupt();			//something wrong... I dont know why...
-/*
-{
-	(*__hblankhook)();
-}*/
 
 /*****************************
 * name:			DS_init
@@ -91,6 +81,7 @@ void DS_init() {
 * description:	none
 ******************************/
 void EMU_Init() {
+	cpuInit();
 	PPU_init();
 	rescale(0xe000,-0x00060000);
 	REG_DISPCNT=0x38810000;
@@ -148,17 +139,17 @@ int main(int _argc, char **_argv) {
 	do_romebd();
 #endif
 
-	//__emuflags |= PALSYNC;
+	//globals.emuFlags |= PALSYNC;
 
 	while(1) { // main loop to do the emulation
 		framecount++;
-		if(__emuflags & PALTIMING && global_playcount == 0) {
+		if(globals.emuFlags & PALTIMING && global_playcount == 0) {
 			framecount--;
 		}
 		if(debuginfo[VBLS]>59) {
 			debuginfo[VBLS]-=60;
-			debuginfo[1] = debuginfo[0];
-			debuginfo[0] = 0;
+			debuginfo[ERR1] = debuginfo[ERR0];
+			debuginfo[ERR0] = 0;
 			debuginfo[FPS]=framecount;
 			framecount=0;
 		}
@@ -167,38 +158,38 @@ int main(int _argc, char **_argv) {
 		IPC_KEYS = keysCurrent();
 
 		//change nsf states
-		if(__emuflags & NSFFILE) {
+		if(globals.emuFlags & NSFFILE) {
 			static int oldkey = 0;
 			int keydown = IPC_KEYS & (~oldkey);
 			oldkey = IPC_KEYS;
 
 			if(keydown & KEY_LEFT) {
-				if(__nsfsongno == 0) {
-					__nsfsongno = nsfheader.TotalSong-1;
+				if(__nsfSongNo == 0) {
+					__nsfSongNo = nsfHeader.TotalSong-1;
 				} else {
-					__nsfsongno--;
+					__nsfSongNo--;
 				}
 			}
 			if(keydown & KEY_RIGHT) {
-				if(++__nsfsongno > nsfheader.TotalSong-1) {
-					__nsfsongno = 0;
+				if(++__nsfSongNo > nsfHeader.TotalSong-1) {
+					__nsfSongNo = 0;
 				}
 			}		
 			if(keydown & KEY_UP) {
-				__nsfplay = 1;
-				__nsfinit = 1;
+				__nsfPlay = 1;
+				__nsfInit = 1;
 			}		
 			if(keydown & KEY_DOWN) {
-				__nsfplay = 0;
+				__nsfPlay = 0;
 				Sound_reset();
 			}
 		}
 			
 		do_shortcuts();
-		if((__emuflags & AUTOSRAM)) {
-			if(__emuflags & NEEDSRAM) {
+		if((globals.emuFlags & AUTOSRAM)) {
+			if(globals.emuFlags & NEEDSRAM) {
 				sramcount = 1;
-				__emuflags&=~NEEDSRAM;
+				globals.emuFlags&=~NEEDSRAM;
 			}
 			if(sramcount > 0)
 				sramcount++;
@@ -249,10 +240,10 @@ void play() {
 		global_playcount = 0;
 
 	if(nifi_stat)
-		__emuflags &= ~(FASTFORWARD | REWIND);		//when nifi enabled, disable the fastforward & rewind.
+		globals.emuFlags &= ~(FASTFORWARD | REWIND);		//when nifi enabled, disable the fastforward & rewind.
 
-	forward = __emuflags & FASTFORWARD;
-	backward = __emuflags & REWIND;
+	forward = globals.emuFlags & FASTFORWARD;
+	backward = globals.emuFlags & REWIND;
 
 	if (backward) { // for rolling back... a nice function?
 		swiWaitForVBlank();
@@ -268,27 +259,26 @@ void play() {
 			}
 		}
 	} else {
-		if (__emuflags & SOFTRENDER) {
-			if (!(forward) && (fcount >= debuginfo[6] && fcount - debuginfo[6] < 10) ) // disable VBlank to speed up emulation.
+		if(globals.emuFlags & SOFTRENDER) {
+			if(!(forward) && (fcount >= debuginfo[VBLS] && fcount - debuginfo[VBLS] < 10) ) // disable VBlank to speed up emulation.
 				swiWaitForVBlank();
 		} else {
 			if(!(forward)) {
-				if(__emuflags & PALSYNC) {
-					if(__emuflags & (SOFTRENDER | PALTIMING))
-						__emuflags ^= PALSYNC;
-
+				if(globals.emuFlags & PALSYNC) {
+					if(globals.emuFlags & (SOFTRENDER | PALTIMING))
+						globals.emuFlags ^= PALSYNC;
 					if(REG_VCOUNT < 190) {
 						swiWaitForVBlank();
 					}
 				}
 				else {
-					if((!(__emuflags & ALLPIXEL)) || (all_pix_start != 0))
+					if((!(globals.emuFlags & ALLPIXEL)) || (globals.ppu.pixStart != 0))
 						swiWaitForVBlank();
 				}
 			}
 		}
 
-		if (!(__emuflags & PALTIMING && global_playcount == 6)) {
+		if(!(globals.emuFlags & PALTIMING && global_playcount == 6)) {
 			EMU_Run(); //run a frame
 			framecount++;
 			if(framecount > 8) {	//save state every 9th frame
@@ -304,24 +294,24 @@ void play() {
 				}
 			}
 		} else {
-			if((__emuflags & PALTIMING) && (__emuflags & ALLPIXEL) && !(__emuflags & SOFTRENDER))
+			if((globals.emuFlags & PALTIMING) && (globals.emuFlags & ALLPIXEL) && !(globals.emuFlags & SOFTRENDER))
 				swiWaitForVBlank();
 		}
 	}
-
-	if(__emuflags & SOFTRENDER) {
-		__emuflags &= ~AUTOSRAM;
-		__rendercount++;
-		if(SOFT_FRAMESKIP <= 1 ||__rendercount == 1) {
-			if(__emuflags & ALLPIXEL)
+	
+	if(globals.emuFlags & SOFTRENDER) {
+		globals.emuFlags &= ~AUTOSRAM;
+		globals.renderCount++;
+		if(SOFT_FRAMESKIP <= 1 ||globals.renderCount == 1) {
+			if(globals.emuFlags & ALLPIXEL)
 				render_sub();
 			render_all();
 		}
-		if(!(forward) && __rendercount >= SOFT_FRAMESKIP)
-			__rendercount = 0;
-		if((forward) && __rendercount > 16)
-			__rendercount = 0;
-	} else if(__emuflags & ALLPIXEL) {
+		if(!(forward) && globals.renderCount >= SOFT_FRAMESKIP)
+			globals.renderCount = 0;
+		if((forward) && globals.renderCount > 16)
+			globals.renderCount = 0;
+	} else if(globals.emuFlags & ALLPIXEL) {
 		render_sub();
 	}
 
@@ -329,5 +319,5 @@ void play() {
 	if(fcount > 59)
 		fcount = 0;
 
-	__emuflags &= ~(FASTFORWARD | REWIND);
+	globals.emuFlags &= ~(FASTFORWARD | REWIND);
 }

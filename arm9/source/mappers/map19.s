@@ -1,29 +1,26 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
 @---------------------------------------------------------------------------------
 	.global mapper19init
-	.global framehook
-	.global hbhook
-	counter = mapperdata+0
-	enable = mapperdata+4
-	reg0	= mapperdata+8
-	reg1	= mapperdata+9
+	counter = mapperData+0
+	enable = mapperData+4
+	reg0	= mapperData+8
+	reg1	= mapperData+9
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper19init:
 @---------------------------------------------------------------------------------
 	.word map19_8,map19_A,map19_C,map19_E
 
 	adr r1,write0
-	str_ r1,writemem_tbl+8
+	str_ r1,rp2A03MemWrite
 
 	adr r1,map19_r
-	str_ r1,readmem_tbl+8
+	str_ r1,rp2A03MemRead
 	
 	adr r0,hook
-	str_ r0,scanlinehook
+	str_ r0,scanlineHook
 
 	ldr r0,=VRAM_chr		@enable chr write
 	ldr r1,=vram_write_tbl	
@@ -32,35 +29,37 @@ mapper19init:
 
 @---------------------------------------------------------------------------------
 write0:
-	cmp addy,#0x5000
-	blo IO_W
+	cmp addy,#0x4800
+	blo empty_W
 	and r1,addy,#0x7800
 	cmp r1,#0x5000
 	streqb_ r0,counter+2
-	moveq pc,lr
+	moveq r0,#0
+	beq rp2A03SetIRQPin
 
 	cmp r1,#0x5800
-	movne pc,lr
+	bxne lr
 	strb_ r0,counter+3
 	and r0,r0,#0x80
 	strb_ r0,enable
-	mov pc,lr
+	mov r0,#0
+	b rp2A03SetIRQPin
 @---------------------------------------------------------------------------------
 map19_r:
-	cmp addy,#0x5000
-	blo IO_R
+	cmp addy,#0x4800
+	blo empty_R
 	mov r0, #0
 
 	and r1,addy,#0x7800
 
 	cmp r1,#0x5000
 	ldreqb_ r0,counter+2
-	moveq pc,lr
+	bxeq lr
 
 	cmp r1,#0x5800
 	ldreqb_ r0,counter+3
 	biceq r0, r0, #0x80
-	mov pc,lr
+	bx lr
 
 @---------------------------------------------------------------------------------
 map19_8:
@@ -93,7 +92,7 @@ map19_A:
 	
 map19_C:			@ Do NameTable RAMROM change, for mirroring.
 	cmp r0, #0xE0
-	movcc pc, lr
+	bxcc lr
 
 	mov r1, addy, lsr#11
 	and r0, r0, #1
@@ -103,7 +102,7 @@ map19_C:			@ Do NameTable RAMROM change, for mirroring.
 	ldr r0, =vram_map+8*4
 	add r0, r0, r1, lsl#2
 	str r2, [r0]
-	mov pc, lr
+	bx lr
 @---------------------------------------------------------------------------------
 map19_E:
 @---------------------------------------------------------------------------------
@@ -113,7 +112,7 @@ map19_E:
 	cmp r1,#0x7000
 	beq mapCD_
 	cmp r1,#0x6800
-	movne pc, lr
+	bxne lr
 
 	and r1, r0, #0x40
 	strb_ r1, reg0
@@ -129,18 +128,16 @@ hook:
 
 	ldrb_ r0,enable
 	cmp r0,#0
-	beq h1
+	bxeq lr
 
 	ldr_ r0,counter
 @	adds r0,r0,#0x71aaab		@113.66667
 	adds r0,r0,#0x720000
 	str_ r0,counter
-	bcc h1
+	bxcc lr
+
 	mov r0,#0
 	strb_ r0,enable
 	sub r0,r0,#0x10000
 	str_ r0,counter
-@	b irq6502
-	b CheckI
-h1:
-	fetch 0
+	b rp2A03SetIRQPin

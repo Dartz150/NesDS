@@ -5,7 +5,7 @@
 
 bool ips_stat = false;
 int ips_len = 0;		//length of ips patch.
-char *ips_start = (char *)rom_start + ROM_MAX_SIZE - MAX_IPS_SIZE; //alloca the ips patch here.
+char *ips_start = (char *)rom_start + ROM_MAX_SIZE - MAX_IPS_SIZE; //alloc the ips patch here.
 
 void load_ips(const char *name)
 {

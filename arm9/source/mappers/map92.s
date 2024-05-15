@@ -1,35 +1,34 @@
 @---------------------------------------------------------------------------------
+	#include "equates.h"
+@---------------------------------------------------------------------------------
+	.global mapper92init
+
+	reg0 = mapperData
+@---------------------------------------------------------------------------------
 .section .text,"ax"
 @---------------------------------------------------------------------------------
-	#include "equates.h"
-@---------------------------------------------------------------------------------	
-	.global mapper92init
+@ Jaleco
+@ Moero!! Pro Soccer
+@ Moero!! Pro Yakyuu '88 Kettei Ban...
+@ Also see mapper 72
+mapper92init:
 @---------------------------------------------------------------------------------
-mapper92init:	@Jaleco - Moero!! Pro Soccer, Moero!! Pro Yakyuu '88 Kettei Ban...
+	.word write92,write92,write92,write92
+	mov r0,#0
+	b map89AB_
 @---------------------------------------------------------------------------------
-	.word write0,write1,write1,write1
-
-	mov pc,lr
+write92:
 @---------------------------------------------------------------------------------
-write0:		@ Moero!! Pro Yakyuu '88
-@---------------------------------------------------------------------------------
-	tst addy,#0x1000
-	bne write1
-	and r0,addy,#0xff
-	mov r1,r0,lsr#4
-	cmp r1,#0xB
-	beq mapCDEF_
-	cmp r1,#0x7
-	beq chr01234567_
-	mov pc,lr
-@---------------------------------------------------------------------------------
-write1:		@ Moero!! Pro Soccer
-@---------------------------------------------------------------------------------
-	and r0,addy,#0xff
-	mov r1,r0,lsr#4
-	cmp r1,#0xD
-	beq mapCDEF_
-	cmp r1,#0xE
-	beq chr01234567_
-	mov pc,lr
+	ldrb_ r1,reg0
+	strb_ r0,reg0
+	eor r1,r1,r0
+	and r1,r1,r0
+	stmfd sp!,{r0,r1,lr}
+//	ands r2,r0,#0x30		@ Sound bits, 0x20 is reset, 0x10 is select sound with adress bits.
+	tst r1,#0x80
+	blne mapCDEF_
+	ldmfd sp!,{r0,r1,lr}
+	tst r1,#0x40
+	bne chr01234567_
+	bx lr
 @---------------------------------------------------------------------------------

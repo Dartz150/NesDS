@@ -15,25 +15,38 @@ include $(DEVKITARM)/ds_rules
 # all directories are relative to this makefile
 #---------------------------------------------------------------------------------
 BUILD		:=	build
-SOURCES		:=	source source/mappers data source/zip source/dswifi_arm9
-INCLUDES	:=	include ../include data/ source/dswifi_arm9
+SOURCES		:=	source \
+				source/mappers \
+				data \
+				source/zip \
+				source/dswifi_arm9 \
+				source/RP2A03 \
+				source/RP2A03/ARM6502 \
+				source/RP2C02
+INCLUDES	:=	include \
+				../include \
+				data \
+				source/dswifi_arm9 \
+				source/RP2A03 \
+				source/RP2A03/ARM6502 \
+				source/RP2C02
 DATA		:=
 
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-ARCH	:=	-marm -mthumb-interwork
+ARCH	:=	-march=armv5te -mtune=arm946e-s -marm -mthumb-interwork
 
 CFLAGS	:=	-Wall -O2 -DNO_VIZ\
- 			-march=armv5te -mtune=arm946e-s -fomit-frame-pointer\
+ 			-fomit-frame-pointer\
 			-ffast-math \
 			$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM9 #-DROM_EMBEDED
+CFLAGS	+=	$(INCLUDE) -DARM9 -DNDS -DCPU_RP2A03 -DARM7SOUND #-DROM_EMBEDED
 CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions
 
-ASFLAGS	:=	$(ARCH) -march=armv5te -mtune=arm946e-s $(CFLAGS)
+ASFLAGS	:=	$(ARCH) $(CFLAGS)
 
 LDFLAGS	=	-specs=ds_arm9.specs $(ARCH) -Wl,-Map,$(notdir $*.map)
 

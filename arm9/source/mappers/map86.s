@@ -1,22 +1,26 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-@---------------------------------------------------------------------------------	
+@---------------------------------------------------------------------------------
 	.global mapper86init
 @---------------------------------------------------------------------------------
-mapper86init:	@Jaleco - Moero!! Pro Yakyuu, Urusei Yatsura...
+.section .text,"ax"
 @---------------------------------------------------------------------------------
-	.word void,void,void,void
+@ Jaleco JF-13 board
+@ Used for:
+@ (the Red and Black releases of) Moero!! Pro Yakyuu, the Japanese version of Jaleco's Bases Loaded.
+@ Urusei Yatsura...
+mapper86init:
+@---------------------------------------------------------------------------------
+	.word void,void,void,write86
 	adr r1,write86
-	str_ r1,writemem_tbl+12
+	str_ r1,m6502WriteTbl+12
 	mov r0,#0
 	b map89ABCDEF_
 @---------------------------------------------------------------------------------
-write86:
+write86:				@ 6000-7FFF (& E000-FFFF)
 @---------------------------------------------------------------------------------
-	cmp addy,#0x6000
-	movne pc,lr
+	tst addy,#0x1000
+	bxne lr					@ 7000-7FFF Handle sound
 	stmfd sp!,{r0,lr}
 	mov r0,r0,lsr#4
 	bl map89ABCDEF_

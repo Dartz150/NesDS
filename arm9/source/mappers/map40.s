@@ -1,12 +1,11 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
 @---------------------------------------------------------------------------------
 	.global mapper40init
-	countdown = mapperdata+0
-	irqen = mapperdata+4
+	countdown = mapperData+0
+	irqen = mapperData+4
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper40init:		@SMB2j
 @---------------------------------------------------------------------------------
@@ -14,12 +13,10 @@ mapper40init:		@SMB2j
 
 	mov addy,lr
 	adr r0,hook
-	str_ r0,scanlinehook
+	str_ r0,scanlineHook
 
-	ldr r0,=rom_R60			@Set ROM at $6000-$7FFF.
-	str_ r0,readmem_tbl+12
-	ldr r0,=empty_W			@ROM.
-	str_ r0,writemem_tbl+12
+	ldr r0,=empty_W			@Set ROM at $6000-$7FFF.
+	str_ r0,m6502WriteTbl+12
 
 	bl write0
 
@@ -36,30 +33,27 @@ write0:		@$8000-$9FFF
 	str_ r0,countdown
 	mov r0,#0
 	strb_ r0,irqen
-	mov pc,lr
+	b rp2A03SetIRQPin
 @---------------------------------------------------------------------------------
 write1:		@$A000-$BFFF
 @---------------------------------------------------------------------------------
 	mov r0,#1
 	strb_ r0,irqen
-	mov pc,lr
+	bx lr
 @---------------------------------------------------------------------------------
 hook:
 @---------------------------------------------------------------------------------
 	ldrb_ r0,irqen
 	cmp r0,#0
-	beq hk0
+	bxeq lr
 
 	ldr_ r0,countdown
-@	bmi hk0
 	subs r0,r0,#1
 	str_ r0,countdown
-	bcs hk0
+	bxcs lr
 
 	mov r0,#0
 	strb_ r0,irqen
-@	b irq6502
-	b CheckI
-hk0:
-	fetch 0
+	mov r0,#1
+	b rp2A03SetIRQPin
 @---------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-nesDS1.3c [NTR], using toolchain devkitARM r43 (/release folder NesDS.nds binary was compiled with it). 
+nesDS1.4.0 [NTR], using toolchain devkitARM r43 (/release folder NesDS.nds binary was compiled with it). 
 master branch is the one and only branch that uses fully libnds sources. (for TGDS support I won't add support as of now, too busy right now)
 
 We spent a few weeks to port the original nesDS project to the GCC toolchain. Then we made a new EX Edition, and made it possible to emulate the the NES/FC games that the origianl nesDS didn't work well.

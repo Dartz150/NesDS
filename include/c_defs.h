@@ -89,9 +89,23 @@ void showconsole(void);
 //subscreen.c
 int debugdump(void);
 
+#define ERR0 0
+#define ERR1 1
+#define READ 2
+#define WRITE 3
+#define BRK 4
+#define BADOP 5
 #define VBLS 6
 #define FPS 7
-extern u32 debuginfo[];
+#define BGMISS 8
+#define CARTFLAG 9
+
+#define MAPPER 16
+#define PRGCRC 17
+#define DISKNO 18
+#define MAKEID 19
+#define GAMEID 20
+
 int debugdump(void);
 
 //romloader.c
@@ -151,36 +165,29 @@ void fdscmdwrite(u8 diskno);
 void Sound_reset();
 //*.s
 
-//emuflags:
+//emuFlags:
 #define NOFLICKER 1
 #define ALPHALERP 2
 //joyflags
 #define B_A_SWAP	0x80000
 #define L_R_DISABLE	0x100000
-//cartflags
+//cartFlags
 #undef SRAM
 #define SRAM 0x02
 
-extern u32 __emuflags;		//cart.s
-extern u8 __cartflags;
-
 extern u32 joyflags;		//io.s
 extern u32 joystate;
-extern u32 romstart;
 
-extern u8 mapperstate[96];	//6502.s
-extern u32 __scanline;
 extern u8 __barcode;
 extern u8 __barcode_out;
-extern u32 __af_st;
+extern u32 __af_state;
 extern u32 __af_start;
-extern u32 __prgsize16k;
-extern u32 __nsfplay;
-extern u32 __nsfinit;
-extern u32 __nsfsongno;
-extern u32 __nsfsongmode;
+extern u32 __nsfPlay;
+extern u32 __nsfInit;
+extern u32 __nsfSongNo;
+extern u32 __nsfSongMode;
 
-extern struct nsfheader
+extern struct nsfHeader
 {
 	char	ID[5];
 	char	Version;
@@ -198,11 +205,9 @@ extern struct nsfheader
 	char	NTSC_PALbits;
 	char	ExtraChipSelect;
 	char	Expansion[4];		// must be 0
-} nsfheader;
+} nsfHeader;
 
 void EMU_VBlank(void);
-void EMU_Run(void);
-void NSF_Run(void);
 void initcart(char *rom);//,int flags);
 void PPU_init(void);
 void rescale_nr(u32 scale, u32 start);
@@ -213,7 +218,6 @@ int loadstate(u32);
 void rescale(int a, int b);
 
 //render.s
-extern u32 __rendercount;	//6502.s
 extern void render_all();
 extern void render_sub();
 extern void ntsc_pal_reset();

@@ -1,46 +1,48 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
 @---------------------------------------------------------------------------------
 	.global mapper16init
-	patch		= mapperdata	@may never used
-	eeprom_type	= mapperdata + 1
-	irq_enable	= mapperdata + 2
-	irq_type	= mapperdata + 3
-	reg0		= mapperdata + 4
-	reg1		= mapperdata + 5
-	reg2		= mapperdata + 6
-	irq_counter	= mapperdata + 8
-	irq_latch	= mapperdata + 12
+	.global __barcode
+	.global __barcode_out
 
+	patch		= mapperData	@may never used
+	eeprom_type	= mapperData + 1
+	irq_enable	= mapperData + 2
+	unused		= mapperData + 3
+	reg0		= mapperData + 4
+	reg1		= mapperData + 5
+	reg2		= mapperData + 6
+	irq_counter	= mapperData + 8
+	irq_latch	= mapperData + 12
+
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper16init:
 @---------------------------------------------------------------------------------
 	.word write, write, write, write
 	
 	mov r0, #0
-	str_ r0, mapperdata
-	str_ r0, mapperdata + 4
+	str_ r0, mapperData
+	str_ r0, mapperData + 4
 	str_ r0, irq_counter
 	str_ r0, irq_latch
 	strb_ r0, eeprom_type
 
-	ldrb_ r0, cartflags		//games need sram.
+	ldrb_ r0, cartFlags		//games need sram.
 	orr r0, r0, #SRAM
-	strb_ r0, cartflags
+	strb_ r0, cartFlags
 
 	stmfd sp!, {lr}
 
 	adr r1, writel
-	str_ r1,writemem_tbl+12
+	str_ r1,m6502WriteTbl+12
 
 	ldr r0,=hook
-	str_ r0,scanlinehook
+	str_ r0,scanlineHook
 
 	adr r1, readl
-	str_ r1, readmem_tbl+12
+	str_ r1, m6502ReadTbl+12
 
 	ldr r0, =NES_SRAM
 	bl x24c01_reset
@@ -49,8 +51,8 @@ mapper16init:
 
 @patch for games...
 	mov r0, #0		@init val
-	ldr_ r1, rombase	@src
-	ldr_ r2, prgsize8k	@size
+	ldr_ r1, romBase	@src
+	ldr_ r2, prgSize8k	@size
 	mov r2, r2, lsl#13
 	swi 0x0e0000		@swicrc16
 	
@@ -112,10 +114,10 @@ readl:
 	ldrb_ r1, patch
 	ands r1, r1, r1
 	movne r0, addy, lsr#8
-	movne pc, lr
+	bxne lr
 	tst addy, #0xFF
 	movne r0, #0
-	movne pc, lr
+	bxne lr
 
 	stmfd sp!, {lr}
 	ldrb_ r1, eeprom_type
@@ -125,7 +127,7 @@ readl:
 	bl x24c01_read
 	ands r0, r0, r0
 	movne r0, #0x10
-	ldrb_ r1, barcode_out
+	ldrb r1, barcode_out
 	orr r0, r0, r1
 	@mov r0, #0
 	ldmfd sp!, {pc}
@@ -137,7 +139,7 @@ readl:
 	bl x24c02_read
 	ands r0, r0, r0
 	movne r0, #0x10
-	ldrb_ r1, barcode_out
+	ldrb r1, barcode_out
 	orr r0, r0, r1
 	ldmfd sp!, {pc}
 
@@ -148,7 +150,7 @@ readl:
 	ldmfd sp!, {r1}
 	ands r0, r0, r1
 	movne r0, #0x10
-	ldrb_ r1, barcode_out
+	ldrb r1, barcode_out
 	orr r0, r0, r1
 	ldmfd sp!, {pc}
 	
@@ -156,7 +158,7 @@ readl:
 writel:
 	ldrb_ r1, patch
 	ands r1, r1, r1
-	movne pc, lr
+	bxne lr
 	b writesuba
 
 @--------------------------------------------------------------------------------
@@ -168,7 +170,7 @@ write:
 
 @--------------------------------------------------------------------------------
 writesubb:
-	mov pc, lr
+	bx lr
 
 @--------------------------------------------------------------------------------
 writesuba:
@@ -176,7 +178,7 @@ writesuba:
 	cmp r1, #8
 	bcs 8f
 
-	ldr_ r2, vrommask
+	ldr_ r2, vromMask
 	add r2, r2, #1
 	movs r2, r2, lsr#10
 
@@ -187,7 +189,7 @@ writesuba:
 
 	ldrb_ r2, eeprom_type
 	cmp r2, #2
-	movne pc, lr
+	bxne lr
 	strb_ r0, reg0
 	ands r0, r0, #0x8
 	movne r0, #0xFF
@@ -210,7 +212,7 @@ writesuba:
 	cmp r1, #0xd
 	beq d1
 	
-	mov pc, lr
+	bx lr
 8:
 	b map89AB_
 
@@ -227,17 +229,18 @@ a1:
 	strb_ r1, irq_enable
 	ldr_ r1, irq_latch
 	str_ r1, irq_counter
-	mov pc, lr
+	mov r0,#0
+	b rp2A03SetIRQPin
 
 b1:
 	strb_ r0, irq_latch
 	strb_ r0, irq_counter
-	mov pc, lr
+	bx lr
 
 c1:
 	strb_ r0, irq_latch + 1
 	strb_ r0, irq_counter + 1
-	mov pc, lr
+	bx lr
 
 d1:
 	ldrb_ r2, eeprom_type
@@ -262,12 +265,12 @@ d1:
 	
 2:
 	@no need to support now.
-	mov pc, lr
+	bx lr
 
 @--------------------------------------------------------------------------------
 hook:
 @--------------------------------------------------------------------------------
-	ldrb_ r0, barcode
+	ldrb r0, barcode
 	ands r0, r0, r0
 	beq 0f
 
@@ -283,32 +286,37 @@ hook:
 	ldrb r0, [r1, r2]
 	cmp r0, #0xFF
 	moveq r0, #0
-	streqb_ r0, barcode
-	streqb_ r0, barcode_out
+	streqb r0, barcode
+	streqb r0, barcode_out
 	streqb r0, barcode_ptr
 	streqb r0, barcode_cnt
-	strb_ r0, barcode_out
+	strb r0, barcode_out
 	addne r2, r2, #1
 	strneb r2, barcode_ptr
 
 0:
 	ldrb_ r0, irq_enable
 	ands r0, r0, r0
-	beq hk
+	bxeq lr
 	ldr_ r0, irq_counter
 	cmp r0, #115
 	subcs r0, r0, #114
 	strcs_ r0, irq_counter
-	bcs hk
+	bxcs lr
+
 	ldr r1, =0xFFFF
 	and r0, r0, r1
 	str_ r0, irq_counter
-	b CheckI
-
-hk:
-	fetch 0
+	mov r0,#1
+	b rp2A03SetIRQPin
 @---------------------------------------------------------------------------------
 barcode_ptr:
 	.byte 0
 barcode_cnt:
+	.byte 0
+__barcode:
+barcode:
+	.byte 0
+__barcode_out:
+barcode_out:
 	.byte 0

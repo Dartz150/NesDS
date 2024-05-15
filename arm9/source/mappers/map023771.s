@@ -1,21 +1,13 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
-@---------------------------------------------------------------------------------	
-	.global mapper0init
+@---------------------------------------------------------------------------------
 	.global mapper2init
 	.global mapper3init
 	.global mapper7init
 	.global mapper71init
 	.global mapper180init
-/*
 @---------------------------------------------------------------------------------
-mapper0init:
-@---------------------------------------------------------------------------------
-	.word void,void,void,void
-	bx lr*/
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper2init:
 @---------------------------------------------------------------------------------
@@ -36,20 +28,17 @@ mapper71init:
 @---------------------------------------------------------------------------------
 	.word map71w,void,map89AB_,map89AB_
 	adr r0, map71wl
-	str_ r0, writemem_tbl+12
-	
+	str_ r0, m6502WriteTbl+12
+
 	ldr_ r0, prgcrc
 	ldr r1, =0x11CF
 	cmp r0, r1
 	ldrne r1, =0x9F84
 	cmpne r0, r1
-	movne pc, lr
+	bxne lr
 
 	adr r0,m71irqhook
-	str_ r0,scanlinehook
-
-	adr r1,m71iow
-	str_ r1,writemem_tbl+8
+	str_ r0,scanlineHook
 
 	bx lr
 @---------------------------------------------------------------------------------
@@ -60,7 +49,7 @@ mapper180init:
 @---------------------------------------------------------------------------------
 map71w:
 	tst addy,#0x1000
-	moveq pc,lr
+	bxeq lr
 	tst r0,#0x10
 	b mirror1_
 @-------------------------------------
@@ -68,30 +57,13 @@ map71w:
 m71irqhook:
 	ldr_ r0, scanline
 	cmp r0, #179
-	bne hk0
+	bxne lr
 
-	ldr r0, irq_pend
-	ands r0, r0, r0
-	beq hk0
+	ldrb_ r0,rp2A03Control
+	tst r0,#0x10
+	bxeq lr
+	b rp2A03SetDmcIRQ
 
-	mov r0, #0
-	str r0, irq_pend
-	b CheckI
-hk0:
-	fetch 0
-m71iow:
-	and r2, addy, #0xff
-	cmp r2, #0x15
-	bne IO_W
-
-	tst r0, #16
-	strne r0, irq_pend
-	bic r0, #16
-	b IO_W
-
-irq_pend:
-	.word 0
-@---------------------------------------
 @---------------------------------------------------------------------------------
 write0:
 @---------------------------------------------------------------------------------
@@ -104,5 +76,5 @@ write0:
 map71wl:
 	and r1, addy, #0xE000
 	cmp r1, #0x6000
-	movne pc, lr
+	bxne lr
 	b map89AB_

@@ -1,27 +1,22 @@
 @---------------------------------------------------------------------------------
 	#include "equates.h"
 @---------------------------------------------------------------------------------
-	.global mapper216init
+	.global mapper30init
 @---------------------------------------------------------------------------------
 .section .text,"ax"
 @---------------------------------------------------------------------------------
-mapper216init:
+mapper30init:
 @---------------------------------------------------------------------------------
-	.word write, write, write, write
-	
-	stmfd sp!, {lr}
-	mov r0, #0
-	bl map89ABCDEF_
-	ldmfd sp!, {lr}
-	mov r0, #0
-	b chr01234567_
+	.word mapper30write,mapper30write,mapper30write,mapper30write
+	bx lr
 
-
-write:
-	stmfd sp!, {lr}
-	mov r0, addy, lsr#1
-	and r0, r0, #0xE
+mapper30write:
+	stmfd sp!,{r0,lr}
+	bl map89AB_
+	ldmfd sp,{r0}
+	mov r0,r0,lsr#5
+	and r0,r0,#3
 	bl chr01234567_
-	ldmfd sp!, {pc}
-	and r0, addy, #1
-	b map89ABCDEF_
+	ldmfd sp!,{r0,lr}
+	tst r0,#0x80
+	b mirror1_

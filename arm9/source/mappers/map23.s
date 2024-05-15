@@ -1,15 +1,15 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
 @---------------------------------------------------------------------------------
 	.global mapper23init
-	latch = mapperdata+0
-	irqen = mapperdata+1
-	k4irq = mapperdata+2
-	counter = mapperdata+3
-	k4sel = mapperdata+4
-	chr_xx = mapperdata+6 @16 bytes
+	latch = mapperData+0
+	irqen = mapperData+1
+	k4irq = mapperData+2
+	counter = mapperData+3
+	k4sel = mapperData+4
+	chr_xx = mapperData+6 @16 bytes
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 mapper23init:	@Wai Wai World ..
 @---------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ write9000:
 	beq mirrorKonami_
 w90_:
 	strb_ r0,k4sel
-	mov pc,lr
+	bx lr
 @---------------------------------------------------------------------------------
 writeA000:
 @---------------------------------------------------------------------------------
@@ -69,9 +69,7 @@ writeE000:
 	orr addy,addy,addy,lsr#4		@0x55=1, 0xAA=2
 	orr addy,addy,addy,lsr#2
 	and addy,addy,#3
-	adr r1,writeFtbl
-	ldrb_ r2,latch
-	ldr pc,[r1,addy,lsl#2]
-
-writeFtbl: .word KoLatchLo,KoLatchHi,KoCounter,KoIRQen
+	ldr pc,[pc,addy,lsl#2]
+	nop
+writeFtbl: .word KoLatchLo,KoLatchHi,KoIRQEnable,KoIRQack
 @---------------------------------------------------------------------------------

@@ -1,68 +1,73 @@
 @---------------------------------------------------------------------------------
-.section .text,"ax"
-@---------------------------------------------------------------------------------
 	#include "equates.h"
-	#include "6502mac.h"
 @---------------------------------------------------------------------------------
 	.global Konami_Init
 	.global Konami_IRQ_Hook
 	.global KoLatch
 	.global KoLatchLo
 	.global KoLatchHi
-	.global KoCounter
-	.global KoIRQen
-latch = mapperdata+0
-irqen = mapperdata+1
-k4irq = mapperdata+2
-counter = mapperdata+3
+	.global KoIRQEnable
+	.global KoIRQack
+
+latch = mapperData+0
+irqen = mapperData+1
+k4irq = mapperData+2
+counter = mapperData+3
+@---------------------------------------------------------------------------------
+.section .text,"ax"
 @---------------------------------------------------------------------------------
 Konami_Init:
-	ldr r0,=Konami_IRQ_Hook
-	str_ r0,scanlinehook
-	mov pc,lr
+	adr r0,Konami_IRQ_Hook
+	str_ r0,scanlineHook
+	bx lr
 @---------------------------------------------------------------------------------
 KoLatch: @- - - - - - - - - - - - - - -
 	strb_ r0,latch
-	mov pc,lr
+	bx lr
 KoLatchLo: @- - - - - - - - - - - - - - -
-	and r2,r2,#0xf0
+	ldrb_ r1,latch
+	and r1,r1,#0xf0
 	and r0,r0,#0x0f
-	orr r0,r0,r2
+	orr r0,r1,r0
 	strb_ r0,latch
-	mov pc,lr
+	bx lr
 KoLatchHi: @- - - - - - - - - - - - - - -
-	and r2,r2,#0x0f
-	orr r0,r2,r0,lsl#4
+	ldrb_ r1,latch
+	and r1,r1,#0x0f
+	orr r0,r1,r0,lsl#4
 	strb_ r0,latch
-	mov pc,lr
-KoCounter: @- - - - - - - - - - - - - - -
-	ands r1,r0,#2
-	and r0,r0,#1
-	strb_ r0,k4irq
-	strb_ r1,irqen
+	bx lr
+KoIRQEnable: @- - - - - - - - - - - - - - -
+	strb_ r0,irqen
+	tst r0,#2			;@ Timer Enable
 	ldrneb_ r0,latch
 	strneb_ r0,counter
-	mov pc,lr
-KoIRQen: @- - - - - - - - - - - - - - -
-	ldrb_ r0,k4irq
-	orr r0,r0,r0,lsl#1
+	mov r0, #0
+	b rp2A03SetIRQPin
+KoIRQack: @- - - - - - - - - - - - - - -
+	ldrb_ r0,irqen
+	bic r0,r0,#2		;@ Disable Timer
+	orr r0,r0,r0,lsl#1	;@ Move repeat bit to Enable bit
 	strb_ r0,irqen
-	mov pc,lr
+	mov r0, #0
+	b rp2A03SetIRQPin
 @---------------------------------------------------------------------------------
 Konami_IRQ_Hook:
 @---------------------------------------------------------------------------------
 	ldr_ r0,latch
-	tst r0,#0x200	@timer active?
-	beq h1
+	tst r0,#0x200		;@ Timer active?
+	bxeq lr
 
-	adds r0,r0,#0x01000000	@counter++
+	mov r1,#1
+	tst r0,#0x400		;@ Cycle Mode?
+	movne r1,#114		;@ 114 cpu cycles per scanline
+	adds r0,r0,r1,lsl#24	;@ Counter++
 	bcc h0
 
-	strb_ r0,counter	@copy latch to counter
-@	b irq6502
-	b CheckI
+	strb_ r0,counter	;@ Copy latch to counter
+	mov r0, #1
+	b rp2A03SetIRQPin
 h0:
 	str_ r0,latch
-h1:
-	fetch 0
+	bx lr
 @---------------------------------------------------------------------------------
