@@ -5,7 +5,7 @@
 #include "audiosys.h"
 #include "handler.h"
 
-#define MIXFREQ 0x5e00
+#define MIXFREQ 0x5E00
 #define MIXBUFSIZE 128
 
 s16 buffer[MIXBUFSIZE*20];
@@ -83,34 +83,38 @@ const short logtable[1024] = {
 };
 static inline short soundconvert(short output, int sft)
 {
-	if(output >= 0) {
+	if(output >= 0) 
+	{
 		output = logtable[output << sft];
 	} else {
 		output = -logtable[(-output) << sft];
 	}
 	return output << 5;
 }
-	
-void restartsound(int ch) {
+
+void restartsound(int ch) 
+{
 	chan = ch;
 
-	SCHANNEL_CR(0)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x20)|SOUND_PAN(0x20)|SOUND_FORMAT_16BIT; // Square 1
-	SCHANNEL_CR(1)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x20)|SOUND_PAN(0x60)|SOUND_FORMAT_16BIT; // Square 2
-	SCHANNEL_CR(2)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x3F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(3)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x2F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(4)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(5)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x60)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(6)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(7)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(8)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
+    // Max is 0x7F, min is 0x00, defaults are 0x20 - 0x60 for mid panning, 0x40 for center
+	SCHANNEL_CR(0)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x2A)|SOUND_PAN(0x20)|SOUND_FORMAT_16BIT; // VOL 0X2A | PAN 0X20 | Pulse 1
+	SCHANNEL_CR(1)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x2A)|SOUND_PAN(0x60)|SOUND_FORMAT_16BIT; // VOL 0X2A | PAN 0X60 | Pulse 2
+	SCHANNEL_CR(2)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x2B)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT; // VOL 0X2B | PAN 0X40 | Triangle
+	SCHANNEL_CR(3)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x2B)|SOUND_PAN(0x4F)|SOUND_FORMAT_16BIT; // VOL 0X2B | PAN 0X4F | Noise
+	SCHANNEL_CR(4)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x36)|SOUND_FORMAT_16BIT; // VOL 0X7F | PAN 0X36 | DPCM
+	SCHANNEL_CR(5)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT; // VOL 0X7F | PAN 0X40 | FDS
+	SCHANNEL_CR(6)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x2A)|SOUND_FORMAT_16BIT; // VOL 0X7F | PAN 0X2A | VRC6 Square
+	SCHANNEL_CR(7)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x56)|SOUND_FORMAT_16BIT; // VOL 0XF7 | PAN 0X56 | VRC6 Saw
+	SCHANNEL_CR(8)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT; // VOL 0X7F | PAN 0X40 | VRC6 Triangle
 
-	SCHANNEL_CR(10)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_16BIT;
+	SCHANNEL_CR(10)=SCHANNEL_ENABLE|SOUND_REPEAT |SOUND_VOL(0x7F)|SOUND_PAN(0x40)|SOUND_FORMAT_8BIT; // VOL 0X7F | PAN 0X40 | N163
 
 	TIMER0_CR = TIMER_ENABLE; 
 	TIMER1_CR = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
 }
 
-void stopsound() {
+void stopsound() 
+{
 	SCHANNEL_CR(0)=0;
 	SCHANNEL_CR(1)=0;
 	SCHANNEL_CR(2)=0;
@@ -141,62 +145,81 @@ Int32 VRC6SoundRender2();
 Int32 VRC6SoundRender3();
 void VRC6SoundInstall();
 
-void mix(int chan) {
+void mix(int chan) 
+{
 	int mapper = IPC_MAPPER;
-	if(!APU_paused) {
+	if(!APU_paused) 
+	{
 		int i;
 		s16 *dst = &buffer[chan*MIXBUFSIZE];
-		for(i = 0; i < MIXBUFSIZE; i++) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
 			static Int32 preval = 0;
 			Int32 output = soundconvert(NESAPUSoundSquareRender1(), 6);
 			*dst++ = ((preval + output) / 2);
 			preval = output;
 		}
+
 		dst+=MIXBUFSIZE;
-		for(i = 0; i < MIXBUFSIZE; i++) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
 			static Int32 preval = 0;
 			Int32 output = soundconvert(NESAPUSoundSquareRender2(), 6);
 			*dst++ = ((preval + output) / 2);
 			preval = output;
 		}
+
 		dst+=MIXBUFSIZE;
-		for(i = 0; i < MIXBUFSIZE; i++) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
 			static Int32 preval = 0;
 			Int32 output = soundconvert(NESAPUSoundTriangleRender1(), 7);
 			*dst++ = ((preval + output) / 2);
 			preval = output;
 		}
+
 		dst+=MIXBUFSIZE;
-		for(i = 0; i < MIXBUFSIZE; i++) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
 			static Int32 preval = 0;
 			Int32 output = soundconvert(NESAPUSoundNoiseRender1(), 6);
 			output = ((preval + output) / 2);
 			*dst++ = output;
 			preval = output;
 		}
+
 		dst+=MIXBUFSIZE;
-		for(i = 0; i < MIXBUFSIZE; i++) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
 			static Int32 preval = 0;
 			Int32 output = soundconvert(NESAPUSoundDpcmRender1(), 4);
 			output = ((preval + output) / 2);
 			*dst++ = output;
 			preval = output;
 		}
+
 		dst+=MIXBUFSIZE;
-		if(mapper == 20 || mapper == 256) {
-			for(i = 0; i < MIXBUFSIZE; i++) {
+		if(mapper == 20 || mapper == 256)
+		{
+			for(i = 0; i < MIXBUFSIZE; i++) 
+			{
 				static Int32 preval = 0;
 				Int32 output = soundconvert(FDSSoundRender3(), 0);
 				output = ((preval + output) / 2);
 				*dst++ = output;
 				preval = output;
 			}
-		} else {
+
+		} else 
+		{
 			dst+=MIXBUFSIZE;
 		}
+
 		dst+=MIXBUFSIZE;
-		if(mapper == 24 || mapper == 26 || mapper == 256) {
-			for(i = 0; i < MIXBUFSIZE; i++) {
+		if(mapper == 24 || mapper == 26 || mapper == 256) 
+		{
+			for(i = 0; i < MIXBUFSIZE; i++) 
+			{
 				static Int32 preval = 0;
 				Int32 output = VRC6SoundRender1() << 11;
 				output = ((preval + output) / 2);
@@ -204,7 +227,8 @@ void mix(int chan) {
 				preval = output;
 			}
 			dst+=MIXBUFSIZE;
-			for(i = 0; i < MIXBUFSIZE; i++) {
+			for(i = 0; i < MIXBUFSIZE; i++) 
+			{
 				static Int32 preval = 0;
 				Int32 output = VRC6SoundRender2() << 11;
 				output = ((preval + output) / 2);
@@ -212,7 +236,8 @@ void mix(int chan) {
 				preval = output;
 			}
 			dst+=MIXBUFSIZE;
-			for(i = 0; i < MIXBUFSIZE; i++) {
+			for(i = 0; i < MIXBUFSIZE; i++) 
+			{
 				static Int32 preval = 0;
 				Int32 output = VRC6SoundRender3() << 10;
 				output = ((preval + output) / 2);
@@ -227,13 +252,16 @@ void mix(int chan) {
 	APU4015Reg();	//to refresh reg4015.
 }
 
-void initsound() { 		
+void initsound() 
+{ 		
 	int i;
 	powerOn(POWER_SOUND); 
-	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x40);
-	for(i = 0; i < 16; i++) {
+	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x5F);
+	for(i = 0; i < 16; i++) 
+	{
 		SCHANNEL_CR(i) = 0;
 	}
+
 	SCHANNEL_SOURCE(0)=(u32)&buffer[0];
 	SCHANNEL_SOURCE(1)=(u32)&buffer[2*MIXBUFSIZE];
 	SCHANNEL_SOURCE(2)=(u32)&buffer[4*MIXBUFSIZE];
@@ -291,7 +319,8 @@ void soundinterrupt(void)
 {
 	chan^=1;
 	mix(chan);
-	if(REG_IF & IRQ_TIMER1) {
+	if(REG_IF & IRQ_TIMER1) 
+	{
 		lidinterrupt();
 		chan = 1;
 		REG_IF = IRQ_TIMER1;
@@ -302,6 +331,7 @@ void soundinterrupt(void)
 static unsigned char pcm_out = 0x3F;
 int pcm_line = 120;
 int pcmprevol = 0x3F;
+
 void dealrawpcm(unsigned char *out) 
 {
 	unsigned char *in = IPC_PCMDATA;
@@ -313,8 +343,10 @@ void dealrawpcm(unsigned char *out)
 	pcm_line = REG_VCOUNT;
 
 	if(1) {
-		for(i = 0; i < MIXBUFSIZE; i++) {
-			if(in[pcm_line] & 0x80) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
+			if(in[pcm_line] & 0x80) 
+			{
 				pcm_out = in[pcm_line] & 0x7F;
 				in[pcm_line] = 0;
 				count++;
@@ -322,17 +354,20 @@ void dealrawpcm(unsigned char *out)
 			*out++ = (pcm_out + pcmprevol - 0x80);
 			pcmprevol = pcm_out;
 			line += 100;
-			if(line >= 152) {
+			if(line >= 152) 
+			{
 				line -= 152;
 				pcm_line++;
-				if(pcm_line > 262) {
+				if(pcm_line > 262) 
+				{
 					pcm_line = 0;
 				}
 			}
 		}
 	}
 	if(count < 10) {		//not a playable raw pcm.
-		for(i = 0; i < MIXBUFSIZE; i++) {
+		for(i = 0; i < MIXBUFSIZE; i++) 
+		{
 			*outp++ = 0;
 			pcmprevol = 0x3F;
 			pcm_out = 0x3F;
@@ -344,7 +379,8 @@ void APUSoundWrite(Uint address, Uint value);	//from s_apu.c (skip using read ha
 
 void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo channel.
 {
-	switch(msg&0xff) {
+	switch(msg&0xff) 
+	{
 		case FIFO_APU_PAUSE:
 			APU_paused=1;
 			memset(buffer,0,sizeof(buffer));
@@ -363,7 +399,8 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 	}
 }
 
-void resetAPU() {
+void resetAPU() 
+{
 	NESReset();
 	IPC_APUW = 0;
 	IPC_APUR = 0;
@@ -390,13 +427,15 @@ void readAPU()
 	}
 }
 
-void interrupthandler() {
+void interrupthandler() 
+{
 	u32 flags=REG_IF&REG_IE;
 	if(flags&IRQ_TIMER1)
 		soundinterrupt();
 }
 
-void nesmain() {
+void nesmain() 
+{
 	NESAudioFrequencySet(MIXFREQ);
 	NESTerminate();
 	NESHandlerInitialize();
