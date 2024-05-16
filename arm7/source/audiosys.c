@@ -6,7 +6,7 @@
 
 #define SHIFT_BITS 8
 
-static Uint frequency = 48000;
+static Uint frequency = 96000;
 static Uint channel = 1;
 
 static NES_AUDIO_HANDLER *nah = 0;
