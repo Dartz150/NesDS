@@ -12,7 +12,8 @@ static Uint channel = 1;
 static NES_AUDIO_HANDLER *nah = 0;
 static NES_VOLUME_HANDLER *nvh = 0;
 
-static Uint naf_type = NES_AUDIO_FILTER_NONE;
+// naf: "NES Aduio Filter"
+static Uint naf_type = NES_AUDIO_FILTER_CRISP;
 static Uint32 naf_prev;
 
 void NESAudioFilterSet(Uint filter)
@@ -33,7 +34,7 @@ void NESAudioRender(Int16 *bufp, Uint buflen)
 		for (ph = nah; ph; ph = ph->next)
 			accum+=ph->Proc();
 
-		accum += (0x8000 << SHIFT_BITS);
+		accum += (naf_prev << SHIFT_BITS);
 
 		if (accum < 0)
 			output = 0;
@@ -43,8 +44,10 @@ void NESAudioRender(Int16 *bufp, Uint buflen)
 			output = accum;
 		output >>= SHIFT_BITS;
 
+		Uint32 prev = naf_prev;
 		switch (naf_type)
 		{
+			// Adjusting Filters
 			case NES_AUDIO_FILTER_LOWPASS:
 				{
 					Uint32 prev = naf_prev;
@@ -53,16 +56,29 @@ void NESAudioRender(Int16 *bufp, Uint buflen)
 					naf_prev = output;
 				}
 				break;
-			/*
+			case NES_AUDIO_FILTER_CRISP:
+				{
+					naf_prev = output;
+					output = (output + prev) >> 10;
+					naf_prev = output;
+				}
+				break;
+			case NES_AUDIO_FILTER_HIGHPASS:
+				{
+					naf_prev = output;
+					output = (output + prev) << 20;
+					naf_prev = output;
+				}
+				break;	
+				// too high and crispy currently
 			case NES_AUDIO_FILTER_WEIGHTED:
 				{
-					Uint32 prev = naf_prev[ch];
-					naf_prev[ch] = output[ch];
-					output[ch] = (output[ch] + output[ch] + output[ch] + prev) >> 2;
+					naf_prev = output;
+					output = (output + prev) >> 20;
 				}
-				break;*/
+				break;
 		}
-		*bufp++ = ((Int32)output) - 0x8000;
+		*bufp++ = ((Int32)output) - naf_prev;
 	}
 }
 

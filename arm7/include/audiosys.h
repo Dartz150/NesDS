@@ -9,6 +9,7 @@ extern "C" {
 
 typedef void (__fastcall *AUDIOHANDLER2)(Int32 *p);
 typedef Int32 (__fastcall *AUDIOHANDLER)(void);
+
 typedef struct NES_AUDIO_HANDLER_TAG {
 	Uint fMode;
 	AUDIOHANDLER Proc;
@@ -17,6 +18,7 @@ typedef struct NES_AUDIO_HANDLER_TAG {
 } NES_AUDIO_HANDLER;
 
 typedef void (__fastcall *VOLUMEHANDLER)(Uint volume);
+
 typedef struct NES_VOLUME_HANDLER_TAG {
 	VOLUMEHANDLER Proc;
 	struct NES_VOLUME_HANDLER_TAG *next;
@@ -25,7 +27,9 @@ typedef struct NES_VOLUME_HANDLER_TAG {
 enum
 {
    NES_AUDIO_FILTER_NONE,
+   NES_AUDIO_FILTER_CRISP,
    NES_AUDIO_FILTER_LOWPASS,
+   NES_AUDIO_FILTER_HIGHPASS,
    NES_AUDIO_FILTER_WEIGHTED
 };
 
