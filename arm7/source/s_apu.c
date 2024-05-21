@@ -669,7 +669,7 @@ void APUSoundWrite(Uint address, Uint value)
 			case 0x400e:
 			    // Divided by 2 to match DS freq 
 				apu.noise.wl = (noise_time_period_table_ntsc[value & 0x0F]) >> 1;
-				apu.noise.rngshort = value & 0x8000;
+				apu.noise.rngshort = value & 0x80;
 				break;
 
 			// Length counter load ($400F)
