@@ -8,17 +8,18 @@
 // Buffer for PCM samples
 #define MIXBUFSIZE 128
 
-#define MIXFREQ 0x5E00
-#define TIMER 0x2B9 // Adjust General Timers
+Uint TIMER_FREQ = (BUS_FREQ + (MIXFREQ >> 1)) / MIXFREQ; //From GBATEK: timerval = -(33513982Hz/2)/freq
 
 void readAPU(void);
 void resetAPU(void);
 
 static int chan = 0;
 
+// Adjust Volume and frequency using a precalculated logarithmic table
 static inline short adjust_samples(short sample, int freq_shift, int volume)
 {
-	if(sample >= 0) {
+	if(sample >= 0)
+	{
 		sample = calc_table[sample << freq_shift];
 	} else {
 		sample = -calc_table[(-sample) << freq_shift];
@@ -26,6 +27,7 @@ static inline short adjust_samples(short sample, int freq_shift, int volume)
 	return sample << volume;
 }
 
+// Adjust alignment for proper volume and frequency
 static inline short adjust_vrc(short sample, int freq_shift)
 {
 	return sample << freq_shift;
@@ -215,7 +217,7 @@ void initsound()
 { 		
 	int i;
 	powerOn(POWER_SOUND); 
-	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x69);
+	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x52);
 	for(i = 0; i < 16; i++) 
 	{
 		SCHANNEL_CR(i) = 0;
@@ -232,16 +234,16 @@ void initsound()
 	SCHANNEL_SOURCE(8) = (u32)&buffer[16*MIXBUFSIZE];
 	SCHANNEL_SOURCE(10) = (u32)&buffer[18*MIXBUFSIZE];
 
-	SCHANNEL_TIMER(0) = -TIMER;
-	SCHANNEL_TIMER(1) = -TIMER;
-	SCHANNEL_TIMER(2) = -TIMER;
-	SCHANNEL_TIMER(3) = -TIMER;
-	SCHANNEL_TIMER(4) = -TIMER;
-	SCHANNEL_TIMER(5) = -TIMER;
-	SCHANNEL_TIMER(6) = -TIMER;
-	SCHANNEL_TIMER(7) = -TIMER;
-	SCHANNEL_TIMER(8) = -TIMER;
-	SCHANNEL_TIMER(10) = -TIMER << 1;
+	SCHANNEL_TIMER(0) = -TIMER_FREQ;
+	SCHANNEL_TIMER(1) = -TIMER_FREQ;
+	SCHANNEL_TIMER(2) = -TIMER_FREQ;
+	SCHANNEL_TIMER(3) = -TIMER_FREQ;
+	SCHANNEL_TIMER(4) = -TIMER_FREQ;
+	SCHANNEL_TIMER(5) = -TIMER_FREQ;
+	SCHANNEL_TIMER(6) = -TIMER_FREQ;
+	SCHANNEL_TIMER(7) = -TIMER_FREQ;
+	SCHANNEL_TIMER(8) = -TIMER_FREQ;
+	SCHANNEL_TIMER(10) = -TIMER_FREQ << 1;
 
 	SCHANNEL_LENGTH(0) = MIXBUFSIZE;
 	SCHANNEL_LENGTH(1) = MIXBUFSIZE;
@@ -265,7 +267,7 @@ void initsound()
 	SCHANNEL_REPEAT_POINT(8) = 0;
 	SCHANNEL_REPEAT_POINT(10) = 0;
 
-	TIMER0_DATA = -TIMER << 1;
+	TIMER0_DATA = -TIMER_FREQ << 1;
 	TIMER1_DATA = 0x10000 - MIXBUFSIZE;
 	memset(buffer, 0, sizeof(buffer));
 
@@ -295,6 +297,7 @@ static unsigned char pcm_out = 0x3F;
 int pcm_line = 120;
 int pcmprevol = 0x3F;
 
+// Only works well with 24064 sound frequency, needs review
 void Raw_PCM_Channel(unsigned char *out)
 {
 	unsigned char *in = IPC_PCMDATA;

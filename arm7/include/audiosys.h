@@ -7,6 +7,9 @@
 extern "C" {
 #endif
 
+#define MIXFREQ (32768) // DS output Frequency after mixing is 32.768 kHz 10 bits, this should be equal or below.
+#define BUS_FREQ (33513982 >> 1)  // Nintendo DS Audio Bus Clock Frequency = 33.513982MHz/2
+
 typedef void (__fastcall *AUDIOHANDLER2)(Int32 *p);
 typedef Int32 (__fastcall *AUDIOHANDLER)(void);
 
