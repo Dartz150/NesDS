@@ -375,13 +375,6 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 	}
 }
 
-void resetAPU() 
-{
-	NESReset();
-	IPC_APUW = 0;
-	IPC_APUR = 0;
-}
-
 void readAPU()
 {
 	u32 msg;
