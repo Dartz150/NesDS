@@ -8,10 +8,20 @@
 // Buffer for PCM samples
 #define MIXBUFSIZE 128
 
+s16 buffer [MIXBUFSIZE * 20]; // Sound Samples Buffer Size, adjust size if necessary
 Uint NTMR_FREQ = (TIMER_FREQ_SHIFT(MIXFREQ,1,1)); //From GBATEK: timerval = -(33513982Hz/2)/freq
 
 void readAPU(void);
 void resetAPU(void);
+void Raw_PCM_Channel(unsigned char *buffer);
+
+// Resets thge APU emulation to avoid garbage sounds
+void resetAPU() 
+{
+	NESReset();
+	IPC_APUW = 0;
+	IPC_APUR = 0;
+}
 
 static int chan = 0;
 
@@ -94,13 +104,9 @@ int32 VRC6SoundRender2();
 int32 VRC6SoundRender3();
 
 void VRC6SoundInstall();
-
-void Raw_PCM_Channel(unsigned char *buffer);
 void readAPU();
 
-s16 buffer[MIXBUFSIZE * 40]; // Adjust size if necessary
-
-void mix(int chan) 
+void mix(int chan)
 {
     int mapper = IPC_MAPPER;
     if (!APU_paused) 
@@ -207,7 +213,7 @@ void mix(int chan)
             }
         }
 		// Mix raw pcm
-		Raw_PCM_Channel((unsigned char *)&buffer[chan*(MIXBUFSIZE >> 1) + MIXBUFSIZE * 18]);
+		Raw_PCM_Channel((u8 *)&buffer[chan*(MIXBUFSIZE >> 1) + MIXBUFSIZE * 18]);
     }
     readAPU();
     APU4015Reg(); // to refresh reg4015.
@@ -274,6 +280,7 @@ void initsound()
 	memset(IPC_PCMDATA, 0, 512);
 }  
 
+// Stops sound, restarts sound, reset apu, refreshes 4015 reg, clears buffer
 void lidinterrupt(void)
 {
 	stopsound();
@@ -298,13 +305,13 @@ int pcm_line = 120;
 int pcmprevol = 0x3F;
 
 // Only works well with 24064 sound frequency, needs review
-void Raw_PCM_Channel(unsigned char *out)
+void Raw_PCM_Channel(unsigned char *buffer)
 {
 	unsigned char *in = IPC_PCMDATA;
 	int i;
 	int count = 0;
 	int line = 0;
-	unsigned char *outp = out;
+	unsigned char *outp = buffer;
 
 	pcm_line = REG_VCOUNT;
 
@@ -318,7 +325,7 @@ void Raw_PCM_Channel(unsigned char *out)
 				in[pcm_line] = 0;
 				count++;
 			}
-			*out++ = (pcm_out + pcmprevol - 0x80);
+			*buffer++ = (pcm_out + pcmprevol - 0x80);
 			pcmprevol = pcm_out;
 			line += 100;
 			if(line >= 152) 
