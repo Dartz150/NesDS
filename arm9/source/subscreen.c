@@ -97,7 +97,7 @@ int debugdump() {
 	debuginfo[BRK] = globals.cpu.brkCount;
 	debuginfo[BADOP] = globals.cpu.badOpCount;
 #endif
-	if(1 && (__emuflags & NSFFILE)) {
+	if (1 && (__emuflags & NSFFILE)) {
 		u32 *ip=(u32*)&globals.mapperData;
 		consoletext	(64 * 4 + 0 * 32, "Version:", 0);
 		hex8		(64 * 4 + 0 * 32 + 18, nsfHeader.Version);
@@ -136,38 +136,37 @@ int debugdump() {
 		consoletext	(64 * 16 + 2 * 32, "Playing:", 0);
 		consoletext		(64 * 16 + 2 * 32 + 18, (char*)getPlayStatusIcon(__nsfPlay), 0);
 
-		
-		for(i = 0; i < 4; i++) {
+		for (i = 0; i < 4; i++) {
 			hex32(64 * 20 + i * 32, (u32)rp2A03.m6502.memTbl[i + 4] + 0x2000 * i + 0x8000);
 		}
-	} else if(debuginfo[MAPPER] == 20) {
-		u8 *p=(u8*)&globals.mapperData;//0x7000000;
-		u32 *ip=(u32*)&globals.mapperData;//0x7000000;
-		for(i=0;i<18;i++) {
+	}
+	else if (debuginfo[MAPPER] == 20) {
+		u8 *p = (u8*)&globals.mapperData;//0x7000000;
+		u32 *ip = (u32*)&globals.mapperData;//0x7000000;
+		for (i=0; i<18; i++) {
 			consoletext(64 * 4 + i * 32, fdsdbg[i], 0);
 			hex8(64*4+i*32 + 18,p[i]);
 		}
-		for(i=6;i<19;i++) {
+		for (i=6;i<19;i++) {
 			consoletext(64*12 + (i-6) * 32, fdsdbg[i + 12], 0);
 			hex32(64*12 + (i-6) * 32 + 16,ip[i]);
 		}
 	}
 	else {
-		for(i = 0; i < 22; i++) {
+		for (i = 0; i < 22; i++) {
 			consoletext(64 * 4 + i * 32, debugtxt[i], 0);
 			hex32(64 * 4 + i * 32 + 14, debuginfo[i]);
 		}
 #if 1
-		for(i = 0; i < 8; i++) {
+		for (i = 0; i < 8; i++) {
 			hex(64 * 15 + i * 8, globals.ppu.nesChrMap[i], 2);
 		}
-		for(i = 0; i < 4; i++) {
+		for (i = 0; i < 4; i++) {
 			hex(64 * 16 + i * 8, ((char *)rp2A03.m6502.memTbl[i + 4] - (char *)globals.romBase)/0x2000 + i + 4, 2);
 		}
 #endif
 #if 1
-		for (i = 0;i < 96; i++)
-		{
+		for (i = 0; i < 96; i++) {
 			hex8(64*17 + i*8, globals.mapperData[i]);
 		}
 #endif

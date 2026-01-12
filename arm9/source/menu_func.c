@@ -233,6 +233,17 @@ void do_top_menu(void)
 
 int autofire_fps = 2;
 
+void setLightGun(bool enable) {
+	if (enable) {
+		__emuflags |= LIGHTGUN;
+		setJoyPort1(1);
+	}
+	else {
+		__emuflags &= ~LIGHTGUN;
+		setJoyPort1(0);
+	}
+}
+
 void autofire_fresh(void)
 {
 	char buf[16];
@@ -774,7 +785,7 @@ struct button button_nifi[] = {
 	{.name = "\rClose Nifi", .x = 1, .y = 12, .w = 10, .h = 3},
 };
 
-char *nifi_chars[] = 
+const char *nifi_chars[] = 
 {
 	"Single player. IDLE.        ",
 	"Waiting for 2P.             ",
@@ -894,14 +905,14 @@ void menu_extra_action(void)
 		if(lastbutton_type == 2) {
 			switch(lastbutton_cnt) {
 			case 0:
-				__emuflags|=LIGHTGUN;
+				setLightGun(true);
 				menu_stat = 0;
 				menu_draw = 0;
 				__emuflags &= ~SCREENSWAP;
 				hideconsole();
 				break;
 			case 1:
-				__emuflags|=LIGHTGUN;
+				setLightGun(true);
 				menu_stat = 0;
 				menu_draw = 0;
 				__emuflags |= SCREENSWAP;

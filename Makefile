@@ -24,7 +24,7 @@ GAME_SUBTITLE2	:=	Better Sound!
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-all: checkarm7 checkarm9 $(TARGET).nds
+all: checkarm7 checkarm9 $(TARGET).nds $(TARGET).dsi
 
 #---------------------------------------------------------------------------------
 checkarm7:
@@ -37,6 +37,12 @@ checkarm9:
 #---------------------------------------------------------------------------------
 $(TARGET).nds : $(NITRO_FILES) arm7/$(TARGET).elf arm9/$(TARGET).elf
 	ndstool	-c $(TARGET).nds -7 arm7/$(TARGET).elf -9 arm9/$(TARGET).elf \
+	-b $(GAME_ICON) "$(GAME_TITLE);$(GAME_SUBTITLE1);$(GAME_SUBTITLE2)" \
+	$(_ADDFILES)
+
+#---------------------------------------------------------------------------------
+$(TARGET).dsi : $(NITRO_FILES) arm7/$(TARGET).elf arm9/$(TARGET).elf
+	ndstool	-c $(TARGET).dsi -7 arm7/$(TARGET).elf -9 arm9/$(TARGET).elf \
 	-b $(GAME_ICON) "$(GAME_TITLE);$(GAME_SUBTITLE1);$(GAME_SUBTITLE2)" \
 	-g HNES 00 "HOMEBREW" -u 00030004 \
 	$(_ADDFILES)
@@ -54,3 +60,4 @@ clean:
 	$(MAKE) -C arm9 clean
 	$(MAKE) -C arm7 clean
 	rm -f $(TARGET).nds
+	rm -f $(TARGET).dsi

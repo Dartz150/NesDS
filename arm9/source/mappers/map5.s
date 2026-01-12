@@ -37,7 +37,7 @@ chrPage11:	.word 0
 ;@ MMC5
 mapper5init:
 ;@----------------------------------------------------------------------------
-	.word void,void,void,void
+	.word rom_W,rom_W,rom_W,rom_W
 
 	adr r1,write0
 	str_ r1,rp2A03MemWrite
@@ -59,6 +59,11 @@ mapper5init:
 	str_ r0,scanlineHook
 
 	bx lr
+;@----------------------------------------------------------------------------
+BGCNT	= 0x1800	;@ Also defined in RP2C02.s
+m0000_xram:
+	.word BGCNT+0x0400, NES_XRAM+0x1C00,NES_XRAM+0x1C00,NES_XRAM+0x1C00,NES_XRAM+0x1C00
+	.word NDS_BG+0x2000,NDS_BG+0x2000,NDS_BG+0x2000,NDS_BG+0x2000
 ;@----------------------------------------------------------------------------
 write0:
 ;@-------------------------------监视 char *-----------------------------------
@@ -106,7 +111,8 @@ _05:
 	cmp r0,#0
 	beq mirror5_1
 	cmp r0, #0xaa
-	beq mirror_xram_0000
+	adreq r0,m0000_xram
+	beq setNameTables
 	cmp r0,#0xE4
 	beq mirror4_
 	eor r1,r0,r0,lsr#4

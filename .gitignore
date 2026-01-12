@@ -55,5 +55,6 @@ log.txt
 
 *.elf
 *.nds
+*.dsi
 arm7/build/*
 arm9/build/*

@@ -9,20 +9,20 @@ extern "C" {
 typedef enum {
 	/** NTSC first revision(s) */
 	REV_RP2C02		= 0x00,
-	/** PAL revision */
-	REV_RP2C07		= 0x01,
 	/** NTSC RGB revision */
-	REV_RP2C03		= 0x02,
+	REV_RP2C03		= 0x01,
 	/** NTSC RGB revision */
 	REV_RP2C04		= 0x02,
 	/** NTSC RGB revision */
-	REV_RP2C05		= 0x02,
+	REV_RP2C05		= 0x03,
+	/** PAL revision */
+	REV_RP2C07		= 0x10,
 	/** UMC UA6528P, Argentina Famiclone */
-	REV_UA6528P		= 0x03,
+	REV_UA6528P		= 0x23,
 	/** UMC UA6538, aka Dendy */
-	REV_UA6538		= 0x04,
+	REV_UA6538		= 0x24,
 	/** UMC UA6548, Brazil Famiclone */
-	REV_UA6548		= 0x05,
+	REV_UA6548		= 0x25,
 } RP2C03REV;
 
 typedef struct {
@@ -45,10 +45,12 @@ typedef struct {
 	u8 sprite0X;
 	u8 vramAddrInc;
 	u8 toggle;
+
 	u8 ppuCtrl0;
 	u8 ppuCtrl1;
 	u8 ppuStat;
 	u8 ppuOamAdr;
+
 	u8 ppuCtrl0Frame;
 	u8 readTemp;
 	u8 rp2C02Revision;
@@ -59,8 +61,8 @@ typedef struct {
 	u32 loopy_y;
 	u32 loopy_v;
 
-	u32 vromMask;
-	u32 vromBase;
+	u32 vmemMask;
+	u32 vmemBase;
 	u32 palSyncLine;
 
 	u32 pixStart;

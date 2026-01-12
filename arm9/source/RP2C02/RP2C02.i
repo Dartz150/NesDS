@@ -6,13 +6,13 @@ NDS_PALETTE		= 0x5000000
 
 /** Revision of chip */
 	.equ REV_RP2C02,	0x00	;@ NTSC first revision(s)
-	.equ REV_RP2C07,	0x01	;@ PAL revision
-	.equ REV_RP2C03,	0x02	;@ NTSC RGB revision
+	.equ REV_RP2C03,	0x01	;@ NTSC RGB revision
 	.equ REV_RP2C04,	0x02	;@ NTSC RGB revision
-	.equ REV_RP2C05,	0x02	;@ NTSC RGB revision
-	.equ REV_UA6528P, 	0x03	;@ UMC UA6528P, Argentina Famiclone
-	.equ REV_UA6538, 	0x04	;@ UMC UA6538, aka Dendy
-	.equ REV_UA6548, 	0x05	;@ UMC UA6548, Brazil Famiclone
+	.equ REV_RP2C05,	0x03	;@ NTSC RGB revision
+	.equ REV_RP2C07,	0x10	;@ PAL revision
+	.equ REV_UA6528P, 	0x23	;@ UMC UA6528P, Argentina Famiclone
+	.equ REV_UA6538, 	0x24	;@ UMC UA6538, aka Dendy
+	.equ REV_UA6548, 	0x25	;@ UMC UA6548, Brazil Famiclone
 
 						;@ RP2C02.s
 	rp2c02ptr	.req m6502ptr
@@ -37,10 +37,12 @@ ppuBusLatch:	.byte 0
 sprite0X:		.byte 0
 vramAddrInc:	.byte 0
 toggle:			.byte 0
-ppuCtrl0:		.byte 0
+
+ppuCtrl0:		.byte 0			;@ These 4 need to be together
 ppuCtrl1:		.byte 0
 ppuStat:		.byte 0
 ppuOamAdr:		.byte 0
+
 ppuCtrl0Frame:	.byte 0
 readTemp:		.byte 0
 rp2C02Revision:	.byte 0
@@ -51,8 +53,8 @@ loopy_x:		.long 0
 loopy_y:		.long 0
 loopy_v:		.long 0
 
-vromMask:		.long 0
-vromBase:		.long 0
+vmemMask:		.long 0
+vmemBase:		.long 0
 palSyncLine:	.long 0
 
 pixStart:		.long 0

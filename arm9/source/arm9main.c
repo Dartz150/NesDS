@@ -29,7 +29,7 @@ void do_romebd()
 void showversion()
 {
 	memset((void *)(SUB_BG),0,64*3);
-	consoletext(64*2-32,"       nesDS 2.0________________________________",0);
+	consoletext(64*2-32,"     nesDS 2.1__________________________________",0);
 }
 
 /*****************************
@@ -148,6 +148,8 @@ int main(int _argc, char **_argv) {
 	if(!bootext()) {
 		//chdir("/");
 		do_rommenu(); //show a menu selecting rom files.
+	} else {
+		hideconsole();
 	}
 #else
 	do_romebd();

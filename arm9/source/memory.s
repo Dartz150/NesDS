@@ -20,14 +20,23 @@
 	.global mem_WC0
 	.global mem_WE0
 	.global filler
+
+	.global DISPCNTBUFF
+	.global BGCNTBUFF
+	.global BGCNTBUFFB
+	.global NES_RAM
+	.global NES_NTRAM
+	.global CART_SRAM
+	.global CART_VRAM
+	.global NES_XRAM
+	.global CHR_DECODE
+	.global MAPPED_RGB
 	.global NES_DRAM
 	.global NES_DISK
 
 	.global rom_files
 	.global rom_start
 	.global ipc_region
-	.global nes_region
-	.global ct_buffer
 
 #ifdef ROM_EMBEDED
 	.global romebd_s
@@ -36,13 +45,12 @@
 @---------------------------------------------------------------------------------
 .section .text,"ax"
 @---------------------------------------------------------------------------------
-empty_R:		@read bad address (error)
+empty_R:		@ read bad address (error)
 @---------------------------------------------------------------------------------
 	DEBUGINFO READ,addy
-
-	mov r0,addy,lsr#8
+	// Simulate cpu open bus
+	ldrb r0,[m6502pc,#-1]
 void: @- - - - - - - - -empty function
-@	mov r0,#0	@VS excitebike liked this, read from $3DDE ($2006).
 	bx lr
 @---------------------------------------------------------------------------------
 rom_W:			@write ROM address (error)
@@ -51,19 +59,19 @@ empty_W:		@write bad address (error)
 	DEBUGINFO WRITE,addy
 	bx lr
 @---------------------------------------------------------------------------------
-ram_R:	@ram read ($0000-$1FFF)
+ram_R:	@ ram read ($0000-$1FFF)
 @---------------------------------------------------------------------------------
 	bic addy,addy,#0x1f800		@only 0x07FF is RAM
 	ldrb r0,[m6502zpage,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-ram_W:	@ram write ($0000-$1FFF)
+ram_W:	@ ram write ($0000-$1FFF)
 @---------------------------------------------------------------------------------
 	bic addy,addy,#0x1f800		@only 0x07FF is RAM
 	strb r0,[m6502zpage,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-sram_W:	@sram write ($6000-$7FFF)
+sram_W:	@ sram write ($6000-$7FFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+12
 	strb r0,[r1,addy]
@@ -72,68 +80,68 @@ sram_W:	@sram write ($6000-$7FFF)
 	str_ r1, emuFlags
 	bx lr
 @---------------------------------------------------------------------------------
-mem_R60:	@mem read ($6000-$7FFF) (8K)
+mem_R60:	@ mem read ($6000-$7FFF) (8K)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+12		@[m6502MemTbl+12] = romBase + (page# * 8K)
 	ldrb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-rom_R80:	@rom read ($8000-$9FFF)
+rom_R80:	@ rom read ($8000-$9FFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+16
 	ldrb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-rom_RA0:	@rom read ($A000-$BFFF)
+rom_RA0:	@ rom read ($A000-$BFFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+20
 	ldrb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-rom_RC0:	@rom read ($C000-$DFFF)
+rom_RC0:	@ rom read ($C000-$DFFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+24
 	ldrb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-rom_RE0:	@rom read ($E000-$FFFF)
+rom_RE0:	@ rom read ($E000-$FFFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+28
 	ldrb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-mem_W80:	@rom write ($8000-$9FFF)
+mem_W80:	@ cart write ($8000-$9FFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+16
 	strb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-mem_WA0:	@rom write ($A000-$BFFF)
+mem_WA0:	@ cart write ($A000-$BFFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+20
 	strb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-mem_WC0:	@rom write ($C000-$DFFF)
+mem_WC0:	@ cart write ($C000-$DFFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+24
 	strb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-mem_WE0:	@rom write ($E000-$FFFF)
+mem_WE0:	@ cart write ($E000-$FFFF)
 @---------------------------------------------------------------------------------
 	ldr_ r1,m6502MemTbl+28
 	strb r0,[r1,addy]
 	bx lr
 @---------------------------------------------------------------------------------
-@mem_R	@mem read ($8000-$FFFF) (actually $6000-$FFFF now)
+@mem_R	@ mem read ($6000-$FFFF)
 @---------------------------------------------------------------------------------
 @	adr r2,m6502MemTbl
 @	ldr r1,[r2,r1,lsr#11] @r1=addy & 0xe000
 @	ldrb r0,[r1,addy]
 @	bx lr
 @---------------------------------------------------------------------------------
-filler: @r0=data r1=dest r2=word count
+filler: @ r0=data r1=dest r2=word count
 @	exit with r0 unchanged
 @---------------------------------------------------------------------------------
 	subs r2,r2,#1
@@ -150,7 +158,7 @@ hblankinterrupt:
 
 
 @----------------------------------
-@all below is for memory pre-alloc.
+@ all below is for memory pre-alloc.
 .pool
 
 .section .bss, "aw"
@@ -158,12 +166,32 @@ hblankinterrupt:
 ipc_region:
 	.skip 8192
 
-ct_buffer:
-	.skip 512*20			@DISPCNTBUFF & BGCNTBUFF
-.align 10				@0x400 aligned
+DISPCNTBUFF:
+	.skip 512 * 4
+BGCNTBUFF:
+	.skip 256 * 16
+BGCNTBUFFB:
+	.skip 512 * 8
 
-nes_region:				@NES_RAM should be 0x400 bytes aligned.... 
-	.skip 0x800 + 0x2000 + 0x3000 + 0x2000 + 0x400 + 0x100 + 0x100
+.align 10				@0x400 aligned
+;@ Internal NES RAM
+NES_RAM:				@NES_RAM should be 0x400 bytes aligned....
+	.skip 0x800
+NES_NTRAM:
+	.skip 0x800
+
+;@ Different kinds of Cartridge RAM
+CART_SRAM:
+	.skip 0x2000
+CART_VRAM:
+	.skip 0x8000
+NES_XRAM:
+	.skip 0x2000
+
+CHR_DECODE:
+	.skip 0x400
+MAPPED_RGB:
+	.skip 0x100
 
 #ifdef ROM_EMBEDED
 
@@ -189,6 +217,9 @@ NES_DISK:
 
 rom_files:
 	.skip MAXFILES * 64 + MAXFILES * 4	@this will take a lot of memory. filename should not be longer than 64 in average.
+
+	.align 8
+	.skip 0xF0
 rom_start:
 	.skip 0x40000 + 16		@this is the bigest size for FDS game.
 NES_DRAM:				@if the game is a FDS one, this is available. otherwise not.
