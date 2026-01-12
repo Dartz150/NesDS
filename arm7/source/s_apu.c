@@ -806,35 +806,19 @@ void APUSoundWrite(Uint address, Uint value)
 	}
 	
 	// VRC6 (KONAMI SOUND CHIP) TODO: REFACTOR WITH CASES
-	else if(0x8000 <= address && address < 0xffff && (mapper == 24 || mapper == 256))
+	else if(0x8000 <= address && address < 0xffff && (mapper == 24 || mapper == 26))
 	{
 		if(0x9000 <= address && address <= 0x9002) 
 		{
-			VRC6SoundWrite9000_24(address, value);
+			VRC6SoundWrite9000(address, value);
 		}
 		else if(0xA000 <= address && address <= 0xA002) 
 		{
-			VRC6SoundWriteA000_24(address, value);
+			VRC6SoundWriteA000(address, value);
 		}
 		else if(0xB000 <= address && address <= 0xB002) 
 		{
-			VRC6SoundWriteB000_24(address, value);
-		}
-	}
-
-	else if(0x8000 <= address && address < 0xffff && (mapper == 26 || mapper == 256))
-	{
-		if(0x9000 <= address && address <= 0x9002) 
-		{
-			VRC6SoundWrite9000_26(address, value);
-		}
-		else if(0xA000 <= address && address <= 0xA002) 
-		{
-			VRC6SoundWriteA000_26(address, value);
-		}
-		else if(0xB000 <= address && address <= 0xB002) 
-		{
-			VRC6SoundWriteB000_26(address, value);
+			VRC6SoundWriteB000(address, value);
 		}
 	}
 }

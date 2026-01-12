@@ -369,28 +369,10 @@ void __fastcall mix(int chan)
 {
     int mapper = IPC_MAPPER;
 
-	int32 (*VRC6SoundRender1)();
-    int32 (*VRC6SoundRender2)();
-    int32 (*VRC6SoundRender3)();
-
-    if (mapper == 24) {
-        VRC6SoundRender1 = VRC6SoundRender1_24;
-        VRC6SoundRender2 = VRC6SoundRender2_24;
-        VRC6SoundRender3 = VRC6SoundRender3_24;
-    } else if (mapper == 26) {
-        VRC6SoundRender1 = VRC6SoundRender1_26;
-        VRC6SoundRender2 = VRC6SoundRender2_26;
-        VRC6SoundRender3 = VRC6SoundRender3_26;
-    } else {
-        VRC6SoundRender1 = NULL;
-        VRC6SoundRender2 = NULL;
-        VRC6SoundRender3 = NULL;
-    }
-
     if (!APU_paused) 
 	{
         int i;
-        s16 *pcmBuffer = &buffer[chan*MIXBUFSIZE]; // Pointer to PCM buffer
+        s16 *pcmBuffer = &buffer[chan*MIXBUFSIZE];
 
         for (i = 0; i < MIXBUFSIZE; i++)
 		{			
@@ -447,7 +429,7 @@ void __fastcall mix(int chan)
 			}
 
 		//pcmBuffer+=MIXBUFSIZE;	
-        if (VRC6SoundRender1 && VRC6SoundRender2 && VRC6SoundRender3)
+        if (mapper == 24 || mapper == 26)
 		{
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++)
@@ -681,8 +663,7 @@ void nesmain()
 	// Change func name to "DPCMSoundInstall();"
 	APUSoundInstall();
 	FDSSoundInstall();
-	VRC6SoundInstall_24();
-	VRC6SoundInstall_26();
+	VRC6SoundInstall();
 	
 	resetAPU();
 	NESVolume(0);

@@ -12,10 +12,10 @@ extern "C" {
 #define MIXBUFSIZE                      256
 
 // DS output Frequency after mixing is 32.768 kHz 10 bits, this should be equal or below.
-#define MIXFREQ                        (32768) //32700 // 32000
+#define MIXFREQ                        (32000) //32700 // 32000
 
 //Temporary Define for tests, RAW PCM Channel only works fine with this frequency for some unknown reason
-#define RAW_PCM_FREQ                   (24064) //Matches the NES cycle freq
+#define RAW_PCM_FREQ                   (26760) //Matches the NES cycle freq
 
 //Matches the NES Base Cycles
 #define NES_SAMPLE_RATE                (96000) //24064
