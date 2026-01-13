@@ -805,21 +805,25 @@ void APUSoundWrite(Uint address, Uint value)
 		FDSSoundWriteHandler(address, value);
 	}
 	
-	// VRC6 (KONAMI SOUND CHIP) TODO: REFACTOR WITH CASES
-	else if(0x8000 <= address && address < 0xffff && (mapper == 24 || mapper == 26))
+	// VRC6 (KONAMI SOUND CHIP)
 	{
-		if(0x9000 <= address && address <= 0x9002) 
-		{
-			VRC6SoundWrite9000(address, value);
-		}
-		else if(0xA000 <= address && address <= 0xA002) 
-		{
-			VRC6SoundWriteA000(address, value);
-		}
-		else if(0xB000 <= address && address <= 0xB002) 
-		{
-			VRC6SoundWriteB000(address, value);
-		}
+    	if (mapper == 24 || mapper == 26)
+    	{
+			switch (address & 0xF000)
+			{
+				// Pulse Control ($9000,$A000)
+				case 0x9000:
+					if (address < 0x9003) VRC6SoundWrite9000(address, value);
+					break;
+				case 0xA000:
+					if (address < 0xA003) VRC6SoundWriteA000(address, value);
+					break;
+				// Saw Accum Rate ($B000)
+				case 0xB000:
+					if (address < 0xB003) VRC6SoundWriteB000(address, value);
+					break;
+			}
+    	}
 	}
 }
 
