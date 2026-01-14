@@ -146,20 +146,21 @@ Uint NESAudioChannelGet(void)
 	return channel;
 }
 
-Uint32 DivFix(Uint32 p1, Uint32 p2, Uint32 fix)
+/**
+ * Calculates phase step in fixed point for the oscilators.
+ * * Formula: (TotalCycles / (Divisor * OutputFrequency)) << Shift
+ * * @param clock     Base clock Frequency (NES_BASECYCLES).
+ * @param rate      Channel divisor * Output frequency (MIXFREQ).
+ * @param shift     Fixed point accuracy (CPS_SHIFT).
+ * @return          Phase step (cycles per sample) in fixed point.
+ */
+Uint32 GetFixedPointStep(Uint32 clock, Uint32 rate, Uint32 shift)
 {
-	Uint32 ret;
-	ret = p1 / p2;
-	p1  = p1 % p2;/* p1 = p1 - p2 * ret; */
-	while (fix--)
-	{
-		p1 += p1;
-		ret += ret;
-		if (p1 >= p2)
-		{
-			p1 -= p2;
-			ret++;
-		}
-	}
-	return ret;
+    // We use 64 bits for the intermediate calculation to avoid overflows
+    // before the division, allowing an accurate rounding.
+    uint64_t clock_shifted = (uint64_t)clock << shift;
+    
+	// We add half of the divisor (rate / 2) to achieve rounding
+	// to the nearest integer (nearest rounding) instead of truncation.
+    return (Uint32)((clock_shifted + (rate >> 1)) / rate);
 }

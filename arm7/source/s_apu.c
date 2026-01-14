@@ -10,13 +10,6 @@
 #include "c_defs.h"
 #include "s_vrc6.h"
 
-#define NES_BASECYCLES (21477270)
-
-/* 31 - log2(NES_BASECYCLES/(12*MIN_FREQ)) > CPS_BITS  */
-/* MIN_FREQ:11025 23.6 > CPS_BITS */
-/* 32-12(max spd) > CPS_BITS */
-#define CPS_BITS 16
-
 #define VOL_SHIFT 9 //0
 
 static int apuirq = 0;
@@ -296,9 +289,9 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
 		else
 		{
 			ch->pt += ch->cps;
-			while (ch->pt >= ((ch->wl + 0) << CPS_BITS))
+			while (ch->pt >= ((ch->wl + 0) << CPS_SHIFT))
 			{
-				ch->pt -= ((ch->wl + 0) << CPS_BITS);
+				ch->pt -= ((ch->wl + 0) << CPS_SHIFT);
 				ch->st = (ch->st + 1) & 0xf;
 			}
 		}
@@ -364,9 +357,9 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 		else
 		{
 			ch->pt += ch->cps;
-			while (ch->pt >= ((ch->wl + 0) << CPS_BITS))
+			while (ch->pt >= ((ch->wl + 0) << CPS_SHIFT))
 			{
-				ch->pt -= ((ch->wl + 0) << CPS_BITS);
+				ch->pt -= ((ch->wl + 0) << CPS_SHIFT);
 				ch->st++;
 			}
 		}
@@ -401,9 +394,9 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 	}
 	if (!ch->wl) return 0;
 	ch->pt += ch->cps;
-	while (ch->pt >= (ch->wl << (CPS_BITS + 1)))
+	while (ch->pt >= (ch->wl << (CPS_SHIFT + 1)))
 	{
-		ch->pt -= ch->wl << (CPS_BITS + 1);
+		ch->pt -= ch->wl << (CPS_SHIFT + 1);
 		ch->rng >>= 1;
 		ch->rng |= ((ch->rng ^ (ch->rng >> (ch->rngshort ? 6 : 1))) & 1) << 15;
 	}
@@ -452,9 +445,9 @@ static Int32 __fastcall NESAPUSoundDpcmRender(void)
 	if (ch->key && ch->length)
 	{
 		ch->pt += ch->cps;
-		while (ch->pt >= ((ch->wl + 0) << CPS_BITS))
+		while (ch->pt >= ((ch->wl + 0) << CPS_SHIFT))
 		{
-			ch->pt -= ((ch->wl + 0) << CPS_BITS);
+			ch->pt -= ((ch->wl + 0) << CPS_SHIFT);
 			if (ch->length == 0) continue;
 			if (ch->input & 1)
 				ch->dacout += (ch->dacout < +0x3f);
@@ -892,11 +885,11 @@ static void NESAPUSoundSquareReset(NESAPU_SQUARE *ch)
 	XMEMSET(ch, 0, sizeof(NESAPU_SQUARE));
 		if(getApuCurrentRegion() == PAL)
 	{
-		ch->cps = DivFix((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_BITS);
+		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
 	}
 	else
 	{
-		ch->cps = DivFix(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_BITS);
+		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
 	}
 }
 static void NESAPUSoundTriangleReset(NESAPU_TRIANGLE *ch)
@@ -904,17 +897,17 @@ static void NESAPUSoundTriangleReset(NESAPU_TRIANGLE *ch)
 	XMEMSET(ch, 0, sizeof(NESAPU_TRIANGLE));
 	if(getApuCurrentRegion() == PAL)
 	{
-		ch->cps = DivFix((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_BITS);
+		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
 	}
 	else
 	{
-		ch->cps = DivFix(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_BITS);
+		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
 	}
 }
 static void NESAPUSoundNoiseReset(NESAPU_NOISE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_NOISE));
-	ch->cps = DivFix(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_BITS);
+	ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
 	ch->rng = 0x8000;
 }
 
@@ -924,11 +917,11 @@ static void NESAPUSoundDpcmReset(NESAPU_DPCM *ch)
 	XMEMSET(ch, 0, sizeof(NESAPU_DPCM));
 	if(getApuCurrentRegion() == PAL)
 	{
-		ch->cps = DivFix((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_BITS);
+		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
 	}
 	else
 	{
-		ch->cps = DivFix(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_BITS);
+		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
 	}
 }
 
@@ -940,8 +933,8 @@ static void __fastcall APUSoundReset(void)
 	NESAPUSoundTriangleReset(&apu.triangle);
 	NESAPUSoundNoiseReset(&apu.noise);
 	NESAPUSoundDpcmReset(&apu.dpcm);
-	apu.cpf[1] = DivFix(NES_BASECYCLES, 12 * 240, CPS_BITS);
-	apu.cpf[2] = DivFix(NES_BASECYCLES, 12 * 240 * 4 / 5, CPS_BITS);
+	apu.cpf[1] = GetFixedPointStep(NES_BASECYCLES, 12 * 240, CPS_SHIFT);
+	apu.cpf[2] = GetFixedPointStep(NES_BASECYCLES, 12 * 240 * 4 / 5, CPS_SHIFT);
 	apu.cpf[0] = apu.cpf[1];
 	apu.square[1].sw.ch = 1;
 	apu.square[0].cpf = &apu.cpf[0];

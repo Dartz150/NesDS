@@ -8,6 +8,13 @@
 extern "C" {
 #endif
 
+#define NES_BASECYCLES 21477272
+
+/* 31 - log2(NES_BASECYCLES/(12*MIN_FREQ)) > CPS_BITS  */
+/* MIN_FREQ:11025 23.6 > CPS_BITS */
+/* 32-12(max spd) > CPS_BITS */
+#define CPS_SHIFT 16
+
 typedef void (__fastcall *AUDIOHANDLER2)(Int32 *p);
 typedef Int32 (__fastcall *AUDIOHANDLER)(void);
 
@@ -54,7 +61,7 @@ void FDSSoundInstall(void);
 enum ApuRegion getApuCurrentRegion();
 enum ApuStatus getApuCurrentStatus();
 int32 Raw_PCM_Channel(unsigned char *buffer);
-Uint32 DivFix(Uint32 p1, Uint32 p2, Uint32 fix);
+Uint32 GetFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
 
 #ifdef __cplusplus
 }

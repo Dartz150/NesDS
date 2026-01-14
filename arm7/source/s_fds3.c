@@ -11,7 +11,6 @@
 
 
 #define FM_DEPTH 1 /* 0,1,2 */
-#define NES_BASECYCLES (21477270)
 #define PGCPS_BITS (32-16-6)
 #define EGCPS_BITS (12)
 #define VOL_BITS 12
@@ -287,22 +286,22 @@ static void __fastcall FDSSoundReset(FDSSOUND *ch)
 		if(getApuCurrentRegion() == PAL)
 	{
 		fdssound.srate = NESAudioFrequencyGet() << 1;
-		fdssound.envcps = DivFix(NES_BASECYCLES, 13 * fdssound.srate, EGCPS_BITS + 5 - 9 + 1);
+		fdssound.envcps = GetFixedPointStep(NES_BASECYCLES, 13 * fdssound.srate, EGCPS_BITS + 5 - 9 + 1);
 	}
 	else
 	{
 		fdssound.srate = NESAudioFrequencyGet();
-		fdssound.envcps = DivFix(NES_BASECYCLES, 12 * fdssound.srate, EGCPS_BITS + 5 - 9 + 1);
+		fdssound.envcps = GetFixedPointStep(NES_BASECYCLES, 12 * fdssound.srate, EGCPS_BITS + 5 - 9 + 1);
 	}
 	fdssound.envspd = 0xe8 << EGCPS_BITS;
 	fdssound.envdisable = 1;
 	if(getApuCurrentRegion() == PAL)
 	{
-		fdssound.phasecps = DivFix(NES_BASECYCLES, 13 * fdssound.srate, PGCPS_BITS);
+		fdssound.phasecps = GetFixedPointStep(NES_BASECYCLES, 13 * fdssound.srate, PGCPS_BITS);
 	}
 	else
 	{
-		fdssound.phasecps = DivFix(NES_BASECYCLES, 12 * fdssound.srate, PGCPS_BITS);
+		fdssound.phasecps = GetFixedPointStep(NES_BASECYCLES, 12 * fdssound.srate, PGCPS_BITS);
 	}
 	for (i = 0; i < 0x40; i++)
 	{

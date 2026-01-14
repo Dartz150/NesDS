@@ -13,9 +13,6 @@ extern "C" {
 #include "nsdout.h"
 #include "c_defs.h"
 
-#define NES_BASECYCLES (21477270)
-#define CPS_SHIFT 14
-
 typedef struct 
 {
     Uint32 cps;
