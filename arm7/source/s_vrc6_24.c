@@ -3,6 +3,8 @@
 // (:::) VRC6 AUDIO ENGINE (:::) //
 // Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio
 
+static VRC6SOUND vrc6s;
+
 static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch)
 {
 	// When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
@@ -52,35 +54,20 @@ static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
     return (ch->output >> 3) & 0x1f; // Final Adjustment
 }
 
-int32_t VRC6SoundRender1(void)
+int32_t VRC6SoundRenderSquare1(void)
 {
 	return VRC6SoundSquareRender(&vrc6s.square[0]);
 }
 
-int32_t VRC6SoundRender2(void)
+int32_t VRC6SoundRenderSquare2(void)
 {
 	return VRC6SoundSquareRender(&vrc6s.square[1]);
 }
 
-int32_t VRC6SoundRender3(void)
+int32_t VRC6SoundRenderSaw(void)
 {
 	return VRC6SoundSawRender(&vrc6s.saw);
 }
-
-static Int32 __fastcall VRC6SoundRender(void)
-{
-	Int32 accum = 0;
-	accum += VRC6SoundSquareRender(&vrc6s.square[0]);
-	accum += VRC6SoundSquareRender(&vrc6s.square[1]);
-	accum += VRC6SoundSawRender(&vrc6s.saw);
-	return accum;
-}
-
-static NES_AUDIO_HANDLER s_vrc6_audio_handler[] =
-{
-	{ 1, VRC6SoundRender, }, 
-	{ 0, 0, },
-};
 
 static void __fastcall VRC6SoundVolume(Uint volume)
 {
@@ -226,7 +213,6 @@ void __fastcall VRC6SoundReset(void)
 
 void VRC6SoundInstall(void)
 {
-	NESAudioHandlerInstall(s_vrc6_audio_handler);
 	NESVolumeHandlerInstall(s_vrc6_volume_handler);
 	NESResetHandlerInstall(s_vrc6_reset_handler);
 }

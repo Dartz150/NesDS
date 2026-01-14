@@ -46,8 +46,6 @@ typedef struct
     Uint8 p_low;  // Pulse Line Low.
 } VRC6SOUND;
 
-static VRC6SOUND vrc6s;
-
 //TODO: Move DivFix to a common file
 Uint32 DivFix(Uint32 p1, Uint32 p2, Uint32 fix);
 
@@ -57,9 +55,9 @@ void VRC6SoundReset(void);
 
 // VRC6 Init
 void VRC6SoundInstall(void);
-int32_t VRC6SoundRender1(void);
-int32_t VRC6SoundRender2(void);
-int32_t VRC6SoundRender3(void);
+int32_t VRC6SoundRenderSquare1(void);
+int32_t VRC6SoundRenderSquare2(void);
+int32_t VRC6SoundRenderSaw(void);
 
 // VRC6 Write regs
 void VRC6SoundWrite9000(Uint address, Uint value);

@@ -434,7 +434,7 @@ void __fastcall mix(int chan)
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++)
 			{
-				int32 output = VRC6SoundRender1() << 11;
+				int32 output = VRC6SoundRenderSquare1() << 11;
 				//short int output = lowpass(input);
 				*pcmBuffer++ = output;
             }
@@ -442,7 +442,7 @@ void __fastcall mix(int chan)
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++) 
 			{
-				int32 output = VRC6SoundRender2() << 11;
+				int32 output = VRC6SoundRenderSquare2() << 11;
 				//short int output = lowpass(input);
 				*pcmBuffer++ = output;
             }
@@ -450,7 +450,7 @@ void __fastcall mix(int chan)
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++)
 			{
-				int32 output = VRC6SoundRender3() << 11;
+				int32 output = VRC6SoundRenderSaw() << 11;
 				//short int output = lowpass(input);
 				*pcmBuffer++ = output;
             }
