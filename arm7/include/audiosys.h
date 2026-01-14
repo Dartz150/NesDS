@@ -54,6 +54,7 @@ void FDSSoundInstall(void);
 enum ApuRegion getApuCurrentRegion();
 enum ApuStatus getApuCurrentStatus();
 int32 Raw_PCM_Channel(unsigned char *buffer);
+Uint32 DivFix(Uint32 p1, Uint32 p2, Uint32 fix);
 
 #ifdef __cplusplus
 }
