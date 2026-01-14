@@ -806,6 +806,7 @@ void APUSoundWrite(Uint address, Uint value)
 	}
 	
 	// VRC6 (KONAMI SOUND CHIP)
+	else if (address >= 0x8000)
 	{
     	if (mapper == 24 || mapper == 26)
     	{
