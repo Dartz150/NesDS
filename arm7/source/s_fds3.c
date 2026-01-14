@@ -4,7 +4,6 @@
 #include "handler.h"
 #include "nsf6502.h"
 #include "nsdout.h"
-#include "logtable.h"
 #include "s_fds.h"
 
 #define FDS_DYNAMIC_BIAS 1
@@ -132,31 +131,10 @@ Int32 __fastcall FDSSoundRender(void)
 	return (fdssound.op[0].pg.freq != 0) ? output : 0;
 }
 
-// Int32 FDSSoundRender3(void)
-// {
-// 	return FDSSoundRender();
-// }
-
-
 static NES_AUDIO_HANDLER s_fds_audio_handler[] =
 {
 	{ 1, FDSSoundRender, }, 
 	{ 0, 0, }, 
-};
-
-static void __fastcall FDSSoundVolume(Uint volume)
-{
-	volume += 127;
-	// fdssound.mastervolume = (volume << (LOG_BITS - 8)) << 1;/*
-	// fdssound.mastervolumel[0] = LogToLinear(fdssound.mastervolume, LOG_LIN_BITS - LIN_BITS - VOL_BITS) * 2;
-	// fdssound.mastervolumel[1] = LogToLinear(fdssound.mastervolume, LOG_LIN_BITS - LIN_BITS - VOL_BITS) * 4 / 3;
-	// fdssound.mastervolumel[2] = LogToLinear(fdssound.mastervolume, LOG_LIN_BITS - LIN_BITS - VOL_BITS) * 2 / 2;
-	// fdssound.mastervolumel[3] = LogToLinear(fdssound.mastervolume, LOG_LIN_BITS - LIN_BITS - VOL_BITS) * 8 / 10;*/
-}
-
-static NES_VOLUME_HANDLER s_fds_volume_handler[] = {
-	{ FDSSoundVolume, }, 
-	{ 0, }, 
 };
 
 static const Uint8 wave_delta_table[8] = {
@@ -318,11 +296,7 @@ static NES_RESET_HANDLER s_fds_reset_handler[] =
 
 extern void FDSSoundInstall(void)
 {
-	//LogTableInitialize();
 	NESAudioHandlerInstall(s_fds_audio_handler);
-	NESVolumeHandlerInstall(s_fds_volume_handler);
-	//NESReadHandlerInstall(s_fds_read_handler);
-	//NESWriteHandlerInstall(s_fds_write_handler);
 	FDSSoundWriteHandler = FDSSoundWrite;
 	NESResetHandlerInstall(s_fds_reset_handler);
 }

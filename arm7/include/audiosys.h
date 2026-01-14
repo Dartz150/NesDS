@@ -25,12 +25,6 @@ typedef struct NES_AUDIO_HANDLER_TAG {
 	struct NES_AUDIO_HANDLER_TAG *next;
 } NES_AUDIO_HANDLER;
 
-typedef void (__fastcall *VOLUMEHANDLER)(Uint volume);
-
-typedef struct NES_VOLUME_HANDLER_TAG {
-	VOLUMEHANDLER Proc;
-	struct NES_VOLUME_HANDLER_TAG *next;
-} NES_VOLUME_HANDLER;
   
 enum ApuRegion
 {
@@ -46,21 +40,13 @@ enum ApuStatus
 
 void APU4015Reg(void);
 void APUSoundInstall(void);
-void NESAudioRender(s16 *bufp, Uint buflen);
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph);
 void NESAudioFrequencySet(Uint freq);
 Uint NESAudioFrequencyGet(void);
-void NESAudioChannelSet(Uint ch);
-Uint NESAudioChannelGet(void);
-void NESAudioHandlerInitialize(void);
-void NESVolumeHandlerInstall(NES_VOLUME_HANDLER *ph);
-void NESVolume(Uint volume);
-void NESAudioFilterSet(Uint filter);
 extern void (*FDSSoundWriteHandler)(Uint address, Uint value);
 void FDSSoundInstall(void);
 enum ApuRegion getApuCurrentRegion();
 enum ApuStatus getApuCurrentStatus();
-int32 Raw_PCM_Channel(unsigned char *buffer);
 Uint32 GetFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
 
 #ifdef __cplusplus

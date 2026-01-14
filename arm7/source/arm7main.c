@@ -666,7 +666,6 @@ void nesmain()
 	VRC6SoundInstall();
 	
 	resetAPU();
-	NESVolume(0);
 
 	swiWaitForVBlank();
 	initsound();

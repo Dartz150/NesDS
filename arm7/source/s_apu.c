@@ -5,7 +5,6 @@
 #include "handler.h"
 #include "nsf6502.h"
 #include "nsdout.h"
-#include "logtable.h"
 #include "s_apu.h"
 #include "c_defs.h"
 #include "s_vrc6.h"
@@ -513,28 +512,6 @@ static NES_AUDIO_HANDLER s_apu_audio_handler[] =
 	{ 0, 0, 0}
 };
 
-static void __fastcall APUSoundVolume(Uint volume)
-{
-	volume  = 127;
-	//volume += (NSF_apu_volume << (LOG_BITS - 8)) << 1;
-	
-	/* SND1 */
-	apu.square[0].mastervolume = volume;
-	apu.square[1].mastervolume = volume;
-
-	/* SND2 */
-	apu.triangle.mastervolume = volume;
-	apu.noise.mastervolume = volume;
-
-	volume += 127;
-	apu.dpcm.mastervolume = volume;
-}
-
-static NES_VOLUME_HANDLER s_apu_volume_handler[] = {
-	{ APUSoundVolume, 0},
-	{ 0, 0}
-};
-
 void APUSoundWrite(Uint address, Uint value)
 {
 	int mapper = IPC_MAPPER;
@@ -961,8 +938,5 @@ static NES_RESET_HANDLER s_apu_reset_handler[] = {
 void APUSoundInstall(void)
 {
 	NESAudioHandlerInstall(s_apu_audio_handler);
-	NESVolumeHandlerInstall(s_apu_volume_handler);
-	//NESReadHandlerInstall(s_apu_read_handler);
-	//NESWriteHandlerInstall(s_apu_write_handler);
 	NESResetHandlerInstall(s_apu_reset_handler);
 }

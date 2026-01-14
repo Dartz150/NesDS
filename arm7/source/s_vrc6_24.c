@@ -5,6 +5,24 @@
 
 static VRC6SOUND vrc6s;
 
+/// @brief On some boards (Mapper 26), the A0 and A1 lines were switched, so for those, 
+/// registers will need adjustment ($x001 will become $x002 and vice versa). 
+static void VRC6SoundSetPulseLineRegs()
+{
+	if (IPC_MAPPER == 24)
+	{
+		// 悪魔城伝説 (Akumajou Densetsu, iNES mapper 024)
+        vrc6s.p_high = 2;
+        vrc6s.p_low = 1;
+    }
+	else
+	{
+		// For Madara and Esper Dream 2 and some VRC6 romhacks (iNES mapper 026)
+        vrc6s.p_high = 1;
+        vrc6s.p_low = 2;
+    }
+}
+
 static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch)
 {
 	// When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
@@ -68,17 +86,6 @@ int32_t VRC6SoundRenderSaw(void)
 {
 	return VRC6SoundSawRender(&vrc6s.saw);
 }
-
-static void __fastcall VRC6SoundVolume(Uint volume)
-{
-	volume += 64;
-}
-
-static NES_VOLUME_HANDLER s_vrc6_volume_handler[] =
-{
-	{ VRC6SoundVolume, },
-	{ 0, }, 
-};
 
 static void VRC6SoundWriteSquare(VRC6_SQUARE *ch, Uint address, Uint value)
 {
@@ -165,24 +172,6 @@ static NES_RESET_HANDLER s_vrc6_reset_handler[] =
 	{ 0,                   0, }, 
 };
 
-/// @brief On some boards (Mapper 26), the A0 and A1 lines were switched, so for those, 
-/// registers will need adjustment ($x001 will become $x002 and vice versa). 
-static void VRC6SoundSetPulseLineRegs()
-{
-	if (IPC_MAPPER == 24)
-	{
-		// 悪魔城伝説 (Akumajou Densetsu, iNES mapper 024)
-        vrc6s.p_high = 2;
-        vrc6s.p_low = 1;
-    }
-	else
-	{
-		// For Madara and Esper Dream 2 and some VRC6 romhacks (iNES mapper 026)
-        vrc6s.p_high = 1;
-        vrc6s.p_low = 2;
-    }
-}
-
 void __fastcall VRC6SoundReset(void)
 {
 	XMEMSET(&vrc6s, 0, sizeof(VRC6SOUND));
@@ -194,6 +183,5 @@ void __fastcall VRC6SoundReset(void)
 
 void VRC6SoundInstall(void)
 {
-	NESVolumeHandlerInstall(s_vrc6_volume_handler);
 	NESResetHandlerInstall(s_vrc6_reset_handler);
 }

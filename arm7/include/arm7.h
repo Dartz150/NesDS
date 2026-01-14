@@ -1,7 +1,5 @@
 #ifndef arm7snd
 #define arm7snd
-#define MIXFREQ 0x5e00
-// #define MIXBUFSIZE 128
 #endif
 
 
@@ -20,8 +18,6 @@ extern int APU_paused;
 
 extern void readAPU(void);
 extern void resetAPU(void);
-extern void dealrawpcm(unsigned char *out);
-
 
 #ifdef __cplusplus
 }
