@@ -143,7 +143,7 @@ typedef struct
 	NESAPU_DPCM dpcm;
 	Uint32 cpf[3];			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint8 regs[0x20];
-} APUSOUND;
+} APUSOUND __attribute__((aligned(32)));
 
 static APUSOUND apu;
 
