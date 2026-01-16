@@ -292,7 +292,10 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
         return 0;
     }
 	ch->pt += ch->cps;
-	Uint32 period = (ch->wl + 0) << CPS_SHIFT;
+	
+	// https://www.nesdev.org/wiki/APU#Pulse_($4000%E2%80%93$4007)
+	// f = fCPU / (16 × (t + 1))
+	Uint32 period = (ch->wl + 1) << CPS_SHIFT;
 	while (ch->pt >= period)
 	{
 		ch->pt -= period;
@@ -346,8 +349,9 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 		return 0; // Avoid aliassing with too high frequencies
 	}
 	// Oscilator (Triangle runs at twice the speed of the squares)
+	// Real period IS WL + 1
 	ch->pt += ch->cps;
-	Uint32 period = (ch->wl + 0) << CPS_SHIFT;
+	Uint32 period = (ch->wl + 1) << CPS_SHIFT;
 	while (ch->pt >= period)
 	{
 		ch->pt -= period;
@@ -358,7 +362,7 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 		return 0;
 	}
 	output = ch->st & TRI_VOLUME_MASK;
-    if (ch->st & 0x10)
+    if (ch->st & (TRI_VOLUME_MASK + 1))
 	{
 		output = TRI_VOLUME_MASK - output; // Invert to create the slope
 	}
@@ -396,7 +400,8 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 		return 0;
 	}
 	ch->pt += ch->cps;
-	Uint32 period = ch->wl << (CPS_SHIFT + 1);
+	// Noise table period is already in NES CPU cycles
+	Uint32 period = ch->wl << CPS_SHIFT;
 	while (ch->pt >= period)
 	{
 		ch->pt -= period;
@@ -451,7 +456,8 @@ static Int32 __fastcall NESAPUSoundDpcmRender(void)
 	if (ch->key && ch->length)
 	{
 		ch->pt += ch->cps;
-		Uint32 period = (ch->wl + 0) << CPS_SHIFT;
+		// DPCM period table is already in NES CPU cycles
+		Uint32 period = ch->wl << CPS_SHIFT;
 		while (ch->pt >= period)
 		{
 			ch->pt -= period;
@@ -658,11 +664,11 @@ void APUSoundWrite(Uint address, Uint value)
 			{
 				if (getApuCurrentRegion() == PAL)
 				{
-					apu.noise.wl = (noise_time_period_table_pal[value & NOISE_VOLUME_MASK]) >> 1;
+					apu.noise.wl = (noise_time_period_table_pal[value & NOISE_VOLUME_MASK]);
 				} 
 				else 
 				{
-					apu.noise.wl = (noise_time_period_table_ntsc[value & NOISE_VOLUME_MASK]) >> 1;
+					apu.noise.wl = (noise_time_period_table_ntsc[value & NOISE_VOLUME_MASK]);
 				}
 				apu.noise.rngshort = value & NOISE_MODE;
 				break;
