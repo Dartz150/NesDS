@@ -316,10 +316,12 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
 	{
 		return 0;
 	}
+
 	// Generate amplitude
     output = ch->ed.disable
 		? ch->ed.volume
 		: ch->ed.counter;
+	// Generate Wave	
 	return (ch->st >= ch->duty)
 		? -output
 		: output;
@@ -555,18 +557,18 @@ void APUSoundWrite(Uint address, Uint value)
 			case APU_PULSE1_CTRL:
 			case APU_PULSE2_CTRL:
 			{
-				int ch = address >= APU_PULSE2_CTRL;
-				if (value & PULSE_ENV_CONST_VOL)
-				{
-					apu.square[ch].ed.volume = value & PULSE_VOLUME_MASK;
-				}
-				else
-				{
-					apu.square[ch].ed.rate   = value & PULSE_VOLUME_MASK;
-				}
-				apu.square[ch].ed.disable = value & PULSE_ENV_CONST_VOL;
-				apu.square[ch].lc.clock_disable = value & PULSE_ENV_LOOP;
-				apu.square[ch].ed.looping_enable = value & PULSE_ENV_LOOP;
+				int ch = (address >= APU_PULSE2_CTRL);
+				// VVVV: Constant volume / Envelope Rate
+				apu.square[ch].ed.volume = value & PULSE_VOLUME_MASK;
+				apu.square[ch].ed.rate   = value & PULSE_VOLUME_MASK;
+				// C: Constant Volume flag
+				apu.square[ch].ed.disable = (value & PULSE_ENV_CONST_VOL) ? 1 : 0;
+				// L: Halt length counter / Envelope Loop
+				// IMPORTANT: This bit has a double function
+				apu.square[ch].lc.clock_disable = (value & PULSE_ENV_LOOP) ? 1 : 0;
+				apu.square[ch].ed.looping_enable = (value & PULSE_ENV_LOOP) ? 1 : 0;
+				
+				// Load the Duty Cycle from the table
 				if (getApuCurrentStatus() == Reverse)
 				{
 					apu.square[ch].duty = inverted_square_duty_table[value >> 6];
@@ -581,12 +583,13 @@ void APUSoundWrite(Uint address, Uint value)
 			case APU_PULSE1_SWEEP:
 			case APU_PULSE2_SWEEP:
 			{
-				int ch = address >= APU_PULSE2_CTRL;
-				apu.square[ch].sw.shifter = value & PULSE_SWEEP_SHIFT;
-				apu.square[ch].sw.direction = value & PULSE_SWEEP_NEGATE;
-				apu.square[ch].sw.rate = (value >> 4) & PULSE_SWEEP_SHIFT;
-				apu.square[ch].sw.active = value & PULSE_SWEEP_ENABLE;
-				apu.square[ch].sw.timer = 0;
+				int ch = (address >= APU_PULSE2_CTRL);
+				apu.square[ch].sw.active    = (value & PULSE_SWEEP_ENABLE) ? 1 : 0;
+				apu.square[ch].sw.rate      = (value >> 4) & 7; // Bits 4-6 are the period
+				apu.square[ch].sw.direction = (value & PULSE_SWEEP_NEGATE) ? 1 : 0;
+				apu.square[ch].sw.shifter   = value & PULSE_SWEEP_SHIFT;
+				// Spec: Writing here marks the sweep for reload.
+				apu.square[ch].sw.timer = 0; 
 				break;
 			}
 			// Timer low ($4002 / $4006)
@@ -602,15 +605,20 @@ void APUSoundWrite(Uint address, Uint value)
 			case APU_PULSE1_TIMER_H:
 			case APU_PULSE2_TIMER_H:
 			{
-				int ch = address >= APU_PULSE2_CTRL;
-				// apu.square[ch].pt = 0;
-	#if 1
-				apu.square[ch].st = 0;
-	#endif
-				apu.square[ch].wl &= PULSE_LENGTH_RELOAD;
-				apu.square[ch].wl += (value & PULSE_TIMER_HIGH) << 8;
-				apu.square[ch].ed.counter = 0xF;
-				apu.square[ch].lc.counter = (vbl_length_table[value >> 3]) >> 1;
+				int ch = (address >= APU_PULSE2_CTRL);
+				
+				// Update timer (Wavelength)
+				// We use timer high (bits 0-2) and preserve timer low
+				apu.square[ch].wl &= PULSE_TIMER_RESERVE;
+				apu.square[ch].wl |= (value & PULSE_TIMER_HIGH) << 8;
+				// Load the Length Counter from the table
+				// If status bit (4015) is enabled for this channel, load it.
+				apu.square[ch].lc.counter = (vbl_length_table[value >> 3]);
+				// Side Effects (Spec):
+				apu.square[ch].st = 0;           // "resets the phase of the pulse generator"
+				apu.square[ch].ed.counter = PULSE_VOLUME_MASK;  // "restarts the envelope" (returns to max volume)
+				apu.square[ch].ed.timer = 0;      // "resets the envelope divisor"
+				
 				break;
 			}
 			// Triangle ($4008–$400B)
