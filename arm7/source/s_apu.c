@@ -233,14 +233,22 @@ inline static void LinearCounterStep(LINEARCOUNTER *li, Uint32 cps)
 
 inline static void EnvelopeDecayStep(ENVELOPEDECAY *ed)
 {
-	if (!ed->disable && ++ed->timer > ed->rate)
-	{
-		ed->timer = 0;
-		if (ed->counter || ed->looping_enable)
-		{
-			ed->counter = (ed->counter - 1) & 0xF;
-		}
-	}
+    if (ed->start) {
+        ed->start = 0;
+        ed->counter = 0xF;
+        ed->timer = ed->rate; // Initialize with rate so the first step is immediate
+    } else {
+        if (ed->timer > 0) {
+            ed->timer--;
+        } else {
+            ed->timer = ed->rate; // Reload with V (Rate)
+            if (ed->counter > 0) {
+                ed->counter--;
+            } else if (ed->looping_enable) {
+                ed->counter = 0xF;
+            }
+        }
+    }
 }
 
 inline void SweepStep(SWEEP *sw, Uint32 *wl)
@@ -387,13 +395,8 @@ Int32 NESAPUSoundTriangleRender1()
 }
 
 static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
-{
-	Int32 output;
-	if (!ch->key || !ch->lc.counter) 
-	{
-		return 0;
-	}
-	
+{	
+	// Frame Counter and sequencer (Envelope, Length)
 	ch->fc += ch->cps;
 	while (ch->fc >= *(ch->cpf))
 	{
@@ -405,32 +408,47 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 		EnvelopeDecayStep(&ch->ed); 	/* 240Hz */
 		ch->fp++;
 	}
-	if (!ch->wl) 
+	// Silence Logic
+	if (ch->lc.counter == 0)
 	{
 		return 0;
 	}
+	// Update LFSR
 	ch->pt += ch->cps;
-	// Noise table period is already in NES CPU cycles
-	Uint32 period = ch->wl << CPS_SHIFT;
+	Uint32 period = ch->wl << CPS_SHIFT; // Noise table period is already in NES CPU cycles
+	if (period == 0) 
+	{
+		return 0;
+	}
+
 	while (ch->pt >= period)
 	{
 		ch->pt -= period;
-		ch->rng >>= 1;
-		ch->rng |= ((ch->rng ^ (ch->rng >> (ch->rngshort ? 6 : 1))) & 1) << 15;
+		// Spec: bit 0 XOR (bit 1 or bit 6, 15bit shift)
+		Uint8 feedback = (ch->rng & 1) ^ ((ch->rng >> (ch->rngshort ? 6 : 1)) & 1);
+		ch->rng = (ch->rng >> 1) | (feedback << 14);
 	}
+
 	if (ch->mute)
 	{
 		return 0;
 	}
-	output = ch->ed.disable
-		? ch->ed.volume
+
+	// Volume gate
+	// If bit 0 is 1, silence the channel. 
+	// If is 0, let volume pass.
+	if (ch->rng & 1) 
+	{ 
+		return 0;
+	}
+
+	Uint8 vol = ch->ed.disable 
+		? ch->ed.volume 
 		: ch->ed.counter;
 	
-	output &= NOISE_LENGTH_MASK;
-
-	return (ch->rng & 1)
-		? output
-		: -output;
+	// Center volume (0-15 -> -8-7)
+	// For some reason yet unknown, vol -8 produces too much noise, so we leave vol alone
+    return (Int32)vol;
 }
 
 Int32 NESAPUSoundNoiseRender1()
@@ -656,9 +674,12 @@ void APUSoundWrite(Uint address, Uint value)
 			// Length counter load ($400F)
 			case APU_NOISE_LENGTH:
 			{
-				// apu.noise.rng = 0x8000;
-				apu.noise.ed.counter = NOISE_LENGTH_MASK;
-				apu.noise.lc.counter = (vbl_length_table[value >> 3]) >> 1;
+				// LLLL L--- (Bits 3-7)
+				apu.noise.lc.counter = (vbl_length_table[value >> 3]);
+				// Spec: Side effects
+				apu.noise.ed.counter = 0xF; // Restart envelope
+				apu.noise.ed.timer = 0;     // Reset envelope divider
+				apu.noise.ed.start = 1;  // If we use a start flag
 				break;
 			}
 			// DMC ($4010–$4013)
@@ -887,7 +908,7 @@ static void NESAPUSoundNoiseReset(NESAPU_NOISE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_NOISE));
 	ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
-	ch->rng = 0x8000;
+	ch->rng = 1;
 }
 
 static void NESAPUSoundDpcmReset(NESAPU_DPCM *ch)
