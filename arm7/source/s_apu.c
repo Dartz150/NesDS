@@ -768,7 +768,6 @@ void APUSoundWrite(Uint address, Uint value)
 					apu.triangle.key = 0;
 					apu.triangle.lc.counter = 0;
 					apu.triangle.li.counter = 0;
-					apu.triangle.li.mode = 0;
 				}
 				if (value & APU_CH_NOISE)
 				{
