@@ -42,6 +42,7 @@ typedef struct
 // Envelope Decay
 typedef struct 
 {
+	Uint8 start;          /* envelope decay start flag */
 	Uint8 disable;			/* envelope decay disable */
 	Uint8 counter;			/* envelope decay counter */
 	Uint8 rate;				/* envelope decay rate */
@@ -206,21 +207,28 @@ inline static void LengthCounterStep(LENGTHCOUNTER *lc)
 inline static void LinearCounterStep(LINEARCOUNTER *li, Uint32 cps)
 {
 	li->fc += cps;
-	while (li->fc >= li->cpf)
-	{
-		li->fc -= li->cpf;
-		if (li->tocount)
-		{
-#if 1
-			li->tocount = 0;
-#endif
-			li->mode = 1;
-		}
-		if (li->mode && !li->clock_disable && li->counter && --li->counter == 0)
-		{
-			/* li->mode = 0; */
-		}
-	}
+    while (li->fc >= li->cpf)
+    {
+        li->fc -= li->cpf;
+
+        // Reload if flag is enabled
+        if (li->tocount)
+        {
+            li->counter = li->load;
+        }
+        // Decrement if not zero or if it's more than zero
+        else if (li->counter > 0)
+        {
+            li->counter--;
+        }
+
+        // Spec: "If the control flag (clock_disable) is clear, 
+        // the linear counter reload flag is cleared."
+        if (!li->clock_disable)
+        {
+            li->tocount = 0;
+        }
+    }
 }
 
 inline static void EnvelopeDecayStep(ENVELOPEDECAY *ed)
@@ -321,45 +329,52 @@ Int32 NESAPUSoundSquareRender2()
 
 static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 {
-	Int32 output;
-	// On a real NES, the triangle doesn't turn off with ch->key
-    if (!ch->lc.counter || !ch->li.counter)
-    {
-        return 0;
-    }
-
-	LinearCounterStep(&ch->li, ch->cps);
+	// Update timers (Linear -> 240Hz, Length -> 60Hz)
+	LinearCounterStep(&ch->li, ch->cps); // 240Hz
 	ch->fc += ch->cps;
 	while (ch->fc >= *(ch->cpf))
 	{
 		ch->fc -= *(ch->cpf);
 		if (!(ch->fp & 3)) 
 		{
-			LengthCounterStep(&ch->lc);	/* 60Hz */
+			LengthCounterStep(&ch->lc);	// 60Hz
 		}
 		ch->fp++;
 	}
+
+	// Avoid aliassing with too high frequencies
     if (ch->wl < 2) 
 	{
-		return 0; // Avoid aliassing with too high frequencies
+		return 0;
 	}
-	// Oscilator (Triangle runs at twice the speed of the squares)
-	// Real period IS WL + 1
-	ch->pt += ch->cps;
-	Uint32 period = (ch->wl + 1) << CPS_SHIFT;
-	while (ch->pt >= period)
-	{
-		ch->pt -= period;
-		ch->st = (ch->st + 1) & 0x1F; // 32 step cycle (0-31)
+
+	// Spec: The sequencer only advances if BOTH are more than zero.
+	//      Linear Counter   Length Counter
+	//             |                |
+	//             v                v
+	// Timer ---> Gate ----------> Gate ---> Sequencer ---> (to mixer)
+	if (ch->lc.counter > 0 && ch->li.counter > 0 && ch->wl >= 2)
+    {
+		// Oscilator (Triangle runs at twice the speed of the squares)
+		// Real period IS WL + 1
+		ch->pt += ch->cps;
+		Uint32 period = (ch->wl + 1) << CPS_SHIFT;
+		while (ch->pt >= period)
+		{
+			ch->pt -= period;
+			ch->st = (ch->st + 1) & 0x1F; // 32 step cycle (0-31)
+		}
 	}
+
 	if (ch->mute) 
 	{
 		return 0;
 	}
-	output = ch->st & TRI_VOLUME_MASK;
-    if (ch->st & (TRI_VOLUME_MASK + 1))
+	// Wave Generation
+	Int32 output = ch->st;
+    if (output & 0x10)
 	{
-		output = TRI_VOLUME_MASK - output; // Invert to create the slope
+		output = 0x1F - output; // Invert to create the slope
 	}
 	// IMPORTANT: Return the real unsigned value (0-15)
     // NEVER invert the sign using -output.
@@ -585,56 +600,26 @@ void APUSoundWrite(Uint address, Uint value)
 			case APU_TRI_CTRL:
 			{
 				apu.triangle.li.load = value & TRI_LINEAR_LOAD;
-				if (apu.triangle.li.start)
-				{
-					if (!(value & TRI_LINEAR_HALT))
-					{
-						apu.triangle.li.tocount = 1;
-					}
-					/*
-						(Japanese:sjis memo)
-						NESSOUND.TXTに準拠した実装だと
-						Just Breed/Super Mario Bros. 3で異常
-						no chane->load
-					*/
-					apu.triangle.li.mode = 0;
-					apu.triangle.li.counter = apu.triangle.li.load;
-				}
-				else
-				{
-					if (!apu.triangle.li.mode)
-					{
-						apu.triangle.li.counter = apu.triangle.li.load;
-					}
-					apu.triangle.li.mode = 1;
-				}
-				apu.triangle.li.clock_disable = value & TRI_LINEAR_HALT;
-				apu.triangle.lc.clock_disable = value & TRI_LINEAR_HALT;
-				apu.triangle.li.start = value & TRI_LINEAR_HALT;
+				// C controls both: Length Halt and Linear Control flag
+				apu.triangle.lc.clock_disable = (value & TRI_LINEAR_HALT) ? 1 : 0;
+				apu.triangle.li.clock_disable = (value & TRI_LINEAR_HALT) ? 1 : 0;
 				break;
 			}
 			// Timer Low ($400A)	
 			case APU_TRI_TIMER_L:
 			{
-				apu.triangle.wl &= TRI_TIMER_LOW;
-				apu.triangle.wl += value;
+				apu.triangle.wl &= 0x0700; // Cleans lows, keeps highs (bits 8-10)
+    			apu.triangle.wl |= value;
 				break;
 			}
 			// Length counter load, timer high, set linear counter reload flag ($400B)
 			case APU_TRI_TIMER_H:
 			{
-				apu.triangle.wl &= TRI_LENGTH_RELOAD;
-				apu.triangle.wl += (value & TRI_TIMER_HIGH) << 8;
-				apu.triangle.lc.counter = (vbl_length_table[value >> 3]) >> 1;
-				apu.triangle.li.mode = 0;
-				//if (!apu.triangle.li.mode)
-				//{
-				apu.triangle.li.counter = apu.triangle.li.load;
-				//}
-				if (!apu.triangle.li.start)
-				{
-					apu.triangle.li.tocount = 1;
-				}
+				apu.triangle.wl &= 0x00FF; // Cleans highs, keeps lows (bits 8-10)
+				apu.triangle.wl |= (value & TRI_TIMER_HIGH_MASK) << 8;
+				// Loads Length Counter from the table
+				apu.triangle.lc.counter = vbl_length_table[value >> 3];
+				apu.triangle.li.tocount = 1; // Spec: "Secondary effect: Sets the linear counter reload flag"
 				break;
 			}
 			// Noise ($400C–$400F)
