@@ -51,7 +51,7 @@
 
 // $4003 / $4007 – Length counter load
 #define PULSE_LENGTH_MASK    0xF8  // Bits 3–7
-#define PULSE_LENGTH_RELOAD  0x0FF
+#define PULSE_TIMER_RESERVE  0x00FF
 #define PULSE_TIMER_LOW      0x700
 #define PULSE_TIMER_HIGH     0x07
 
@@ -65,6 +65,8 @@
 #define TRI_LENGTH_RELOAD    0x0FF
 #define TRI_TIMER_LOW        0x700
 #define TRI_TIMER_HIGH       0x07
+#define TRI_TIMER_LOW_MASK   0xFF
+#define TRI_TIMER_HIGH_MASK  0x07
 
 // $400C – Envelope
 #define NOISE_ENV_LOOP       0x20
