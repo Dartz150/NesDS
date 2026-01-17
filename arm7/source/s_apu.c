@@ -122,6 +122,7 @@ typedef struct
 	Uint32 length;			/* bit length */
 	Uint32 mastervolume;
 	Uint32 adr;				/* current address */
+	Uint32 pcm_ptr;         /*Current IPC_PCMDATA position*/ //TODO:Render RAW PCM properly
 	Int32 dacout;
 	Int32 dacout0;
 	Uint8 start_length;
@@ -131,6 +132,7 @@ typedef struct
 	Uint8 irq_report;
 	Uint8 input;			/* 8bit input buffer */
 	Uint8 first;
+	Uint8 bit_count;          // 8bit internal counter TODO:Render RAW PCM properly
 	Uint8 dacbase;
 	Uint8 key;
 	Uint8 mute;
@@ -460,81 +462,99 @@ Int32 NESAPUSoundNoiseRender1()
 
 __inline static void NESAPUSoundDpcmRead(NESAPU_DPCM *ch)
 {
-	char ** memtbl = IPC_MEMTBL;
-	int addr = ch->adr;
-	ch->input = memtbl[(addr >> 13) - 4][addr & 0x1FFF];
-	ch->adr++;
+    char ** memtbl = IPC_MEMTBL;
+    
+    // If the address exceeds 16 bits, wraps the range $8000-$FFFF
+    if (ch->adr > 0xFFFF) 
+    {
+        ch->adr = 0x8000 + (ch->adr & 0x7FFF);
+    }
+
+    int addr = ch->adr;
+    // (addr >> 13) - 4 converts $8000-$FFFF to indexes 0-3 for 8KB blocks
+    ch->input = memtbl[(addr >> 13) - 4][addr & 0x1FFF];
+    
+    ch->adr++; 
 }
 
 static void NESAPUSoundDpcmStart(NESAPU_DPCM *ch)
 {
-	ch->adr = 0xC000 + ((Uint)ch->start_adr << 6);
-	ch->length = (((Uint)ch->start_length << 4) + 1) << 3;
+	ch->adr = 0xC000 | ((Uint16)ch->start_adr << 6);
+    ch->length = ((Uint16)ch->start_length << 4) + 1; // Must be in bytes
+    ch->bit_count = 0;
 	ch->irq_report = 0;
 	NESAPUSoundDpcmRead(ch);
 }
 
 static Int32 __fastcall NESAPUSoundDpcmRender(void)
 {
-	#define ch (&apu.dpcm)
+    #define ch (&apu.dpcm)
 
-	if (ch->first)
-	{
-		ch->first = 0;
-		ch->dacbase = ch->dacout;
-	}
-	if (ch->key && ch->length)
-	{
-		ch->pt += ch->cps;
+    // As long as the channel is enabled (key), the DMC timer runs
+    if (ch->key)
+    {
+        ch->pt += ch->cps;
 		// DPCM period table is already in NES CPU cycles
-		Uint32 period = ch->wl << CPS_SHIFT;
-		while (ch->pt >= period)
-		{
-			ch->pt -= period;
-			if (ch->length == 0)
-			{
-				continue;
-			}
-			if (ch->input & 1)
-			{
-				ch->dacout += (ch->dacout < + DMC_DAC_OUT);
-			}
-			else
-			{
-				ch->dacout -= (ch->dacout > 0);
-			}
-			ch->input >>= 1;
-			if (--ch->length == 0)
-			{
-				if (ch->loop_enable)
-				{
-					NESAPUSoundDpcmStart(ch);	/*loop */
-				}
-				else
-				{
-					if (ch->irq_enable)
-					{
-						//NES6502Irq();	/* irq gen */
-						apuirq = DMC_DAC_RELOAD;
-						ch->irq_report = APU_STATUS_DMC_IRQ;
-					}
-					ch->length = 0;
-				}
-			}
-			else if ((ch->length & 7) == 0)
-			{
-				NESAPUSoundDpcmRead(ch);
-			}
-		}
-		if (ch->mute) 
-		{
-			return 0;
-		}
-		// Return the centered value (Range 0-127 -> -64 a 63)
-		return ((ch->dacout << 1) + ch->dacout0 - DMC_LOOP);
-	}
-	return 0;
-	#undef ch
+        Uint32 period = ch->wl << CPS_SHIFT;
+        
+        while (ch->pt >= period)
+        {
+            ch->pt -= period;
+
+            // (Output Unit)
+			// Only process if there are remaining bits in the current 8 bit cycle
+            // and if we aren't muted
+            if (ch->length > 0) 
+            {
+                // Spec: "If bit 0 from the shift register (input) is 1, add; if 0, decrement."
+                if (ch->input & 1)
+                {
+                    if (ch->dacout <= 125) ch->dacout += 2;
+                }
+                else
+                {
+                    if (ch->dacout >= 2) ch->dacout -= 2;
+                }
+            }
+
+            // Shift the register
+            ch->input >>= 1;
+
+            // Bit counter (8bit cycle per byte)
+			// We use ch->bit_count to emulate the NES 8bit internal counter)
+            ch->bit_count++; 
+            if (ch->bit_count >= 8) 
+            {
+                ch->bit_count = 0;
+                
+                // Try to reload buffer from memory
+                if (ch->length > 0)
+                {
+                    NESAPUSoundDpcmRead(ch); // Reads the next byte from the IPC channel
+                    
+                    if (ch->length > 0) ch->length--; // Decrements remaining bytes
+
+                    if (ch->length == 0)
+                    {
+                        if (ch->loop_enable)
+                        {
+                            NESAPUSoundDpcmStart(ch); // Resets
+                        }
+                        else if (ch->irq_enable)
+                        {
+                            apu.dpcm.irq_report |= APU_STATUS_DMC_IRQ; // Raises a DMC IRQ
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (ch->mute) return 0;
+
+    // Return the centered value (Range 0-127 -> -64 a 63)
+    return (ch->dacout - 64);
+    #undef ch
 }
 
 Int32 NESAPUSoundDpcmRender1()
@@ -549,7 +569,6 @@ void APUSoundWrite(Uint address, Uint value)
 	// NES APU REGISTERS ($4000 ~ $4017)
 	if (APU_PULSE1_CTRL <= address && address <= APU_FRAME_COUNTER)
 	{
-		//if (NSD_out_mode && address <= 0x4015) NSDWrite(NSD_APU, address, value);
 	    apu.regs[address - APU_PULSE1_CTRL] = value;
         switch (address)
 		{
@@ -713,16 +732,7 @@ void APUSoundWrite(Uint address, Uint value)
 			// Load Counter ($4011)
 			case APU_DMC_LOAD:
 			{
-	#if 0
-				if (apu.dpcm.first && (value & DMC_DAC_MASK))
-				{
-					apu.dpcm.first = 0;
-					apu.dpcm.dacbase = value & DMC_DAC_MASK;
-				}
-	#endif
-				apu.dpcm.dacout = (value >> 1) & DMC_DAC_OUT;
-				apu.dpcm.dacbase = value & DMC_DAC_MASK;
-				apu.dpcm.dacout0 = value & 1;
+				apu.dpcm.dacout = value & DMC_DAC_MASK;
 				break;
 			}
 			// Sample address ($4012)
@@ -780,16 +790,18 @@ void APUSoundWrite(Uint address, Uint value)
 				}
 				if (value & APU_CH_DMC)
 				{
-					if (!apu.dpcm.key)
+					if (!apu.dpcm.key || apu.dpcm.length == 0) // If not active or sample has ended
 					{
 						apu.dpcm.key = 1;
-						NESAPUSoundDpcmStart(&apu.dpcm);
+						NESAPUSoundDpcmStart(&apu.dpcm); // Process DCM data
 					}
 				}
 				else
 				{
 					apu.dpcm.key = 0;
+					apu.dpcm.length = 0;    // Stops the sample immediately
 				}
+				apu.dpcm.irq_report = 0;    // Clean the IRQ flag when writing to $4015
 				break;
 			}
 			// Frame Counter ($4017)	
@@ -924,10 +936,12 @@ static void NESAPUSoundDpcmReset(NESAPU_DPCM *ch)
 	if(getApuCurrentRegion() == PAL)
 	{
 		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
+		ch->pcm_ptr = 0; // TODO:Render RAW PCM properly
 	}
 	else
 	{
 		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
+		ch->pcm_ptr = 0; // TODO:Render RAW PCM properly
 	}
 }
 
