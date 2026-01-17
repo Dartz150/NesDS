@@ -16,10 +16,10 @@
 
 // Based from documentation found in https://www.nesdev.org/wiki/APU
 
-static int apuirq = 0;
-
 /*/ Lenght Counter /*/
 // Provides automatic duration control for the NES APU waveform channels ($4015 ~ $400F)
+static int apuirq = 0;
+
 typedef struct 
 {
 	Uint32 counter;			/* length counter */
@@ -181,11 +181,6 @@ static const Uint32 noise_time_period_table_pal[16] =
     0x0BC, 0x0EC, 0x162, 0x1D8, 0x2C4, 0x3B0, 0x762, 0xEC2
 };
 
-static const Uint32 spd_limit_table[8] =
-{
-	0x3FF, 0x555, 0x666, 0x71C, 0x787, 0x7C1, 0x7E0, 0x7F0
-};
-
 // APU DMC LUT NTSC ($4010)
 static const Uint32 dpcm_freq_table_ntsc[16] =
 {
@@ -286,11 +281,11 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
 	}
     // Verify NES hardware limits
     // Sweep silences the channel if the WL is > 0x7FF or < 8
-    if ((!ch->sw.direction && ch->wl > spd_limit_table[ch->sw.shifter]) || 
-	(ch->wl < 8 || ch->wl >= (PULSE_LENGTH_RELOAD | PULSE_TIMER_LOW)))
-    {
-        return 0;
-    }
+	Uint32 sweep_target = ch->wl + (ch->wl >> ch->sw.shifter);
+	if (ch->wl < 8 || (!ch->sw.direction && sweep_target > 0x7FF)) 
+	{
+		return 0;
+	}
 	ch->pt += ch->cps;
 	
 	// https://www.nesdev.org/wiki/APU#Pulse_($4000%E2%80%93$4007)
