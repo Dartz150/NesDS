@@ -114,7 +114,7 @@
 #define FDS_ENV_SPEED        0x408A
 #define FDS_FREQ_L           0x4082
 #define FDS_FREQ_H           0x4083
-#define FDS_END              0x4040
+#define FDS_END              0x4090
 
 // VRC6 (Konami)
 #define VRC6_MIN_BASE        0x8000
