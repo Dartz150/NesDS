@@ -486,64 +486,115 @@ static void NESAPUSoundDpcmStart(NESAPU_DPCM *ch)
 	NESAPUSoundDpcmRead(ch);
 }
 
-static Int32 __fastcall NESAPUSoundDpcmRender(void)
+// DS side NES Frame Counter Increments on each generated sample.
+int raw_pcm_idx = 0;
+
+// Called in the main loop, we need it to be reset each DS frame
+void APU_VBlank_Sync()
+{
+    raw_pcm_idx = 0;
+}
+
+/**
+ * @brief Frame-synchronized NES DMC ($4011) DAC write reconstruction.
+ *
+ * NES DMC raw PCM writes ($4011) require precise timing, but synchronizing
+ * ARM9 and ARM7 in real time on the Nintendo DS is costly and unreliable.
+ * Instead of forwarding each write through IPC or FIFO, ARM9 timestamps
+ * each $4011 write using the current NES scanline and stores it in shared
+ * IPC memory.
+ *
+ * ARM7 generates audio at the defined [DS_SOUND_FREQUENCY] rate and reconstructs the timing
+ * by mapping each produced audio sample to a corresponding NES scanline
+ * within the current frame. When a valid timestamped write is detected,
+ * the DMC DAC output is updated at the correct point in the audio timeline.
+ *
+ * This method avoids tight CPU synchronization, is deterministic,
+ * frame-perfect, and emulates the NES DMC DAC behavior despite
+ * differing clocks between ARM9 and ARM7.
+ */
+inline static void NESAPUReplayDmcPcmWrites(NESAPU_DPCM *ch)
+{
+	// RAW PCM samples must be rendered frame-perfect, hence this "async" method
+	// This emulates RAW PCM sample fetching in DS speeds.
+
+	unsigned char *raw_pcm_buffer = (unsigned char *)IPC_PCMDATA;
+	// Sample Rate = Number of 32kHz samples that fit in 1/60 seconds.
+	int samp_rate = SAMPLES_PER_DS_FRAME;
+    
+	// If for any reason the audio requests more than what we calculate in one frame
+    // (samp_rate), we limit the index to avoid reading garbage
+    int current_idx = raw_pcm_idx;
+    if (current_idx >= samp_rate)
+	{
+		current_idx = samp_rate - 1;
+	}
+    int pcm_idx = (current_idx * NES_SCANLINES) / samp_rate;
+	// Read/Write and clean (Atomic-like)
+    if (raw_pcm_buffer[pcm_idx] & 0x80) 
+    {
+        ch->dacout = raw_pcm_buffer[pcm_idx] & 0x7F;
+        raw_pcm_buffer[pcm_idx] = 0; // Flush buffer after consume to avoid garbage leftovers
+    }
+	raw_pcm_idx++;
+}
+
+static Int32 __fastcall NESAPUSoundDpcmRender()
 {
     #define ch (&apu.dpcm)
 
-    // As long as the channel is enabled (key), the DMC timer runs
-    if (ch->key)
+	// --- SPECIAL DMC $4011 LOGIC ---
+	NESAPUReplayDmcPcmWrites(ch);
+
+    // --- STANDARD DMC LOGIC ---
+    if (ch->key && ch->length > 0)
     {
         ch->pt += ch->cps;
 		// DPCM period table is already in NES CPU cycles
         Uint32 period = ch->wl << CPS_SHIFT;
-        
-        while (ch->pt >= period)
+		while (ch->pt >= period)
         {
             ch->pt -= period;
-
+            
             // (Output Unit)
 			// Only process if there are remaining bits in the current 8 bit cycle
             // and if we aren't muted
             if (ch->length > 0) 
-            {
-                // Spec: "If bit 0 from the shift register (input) is 1, add; if 0, decrement."
+			{
+				// Spec: "If bit 0 from the shift register (input) is 1, add; if 0, decrement."
                 if (ch->input & 1)
-                {
+				{
                     if (ch->dacout <= 125) ch->dacout += 2;
                 }
-                else
-                {
+				else
+				{
                     if (ch->dacout >= 2) ch->dacout -= 2;
                 }
             }
-
-            // Shift the register
+			// Shift the register
             ch->input >>= 1;
-
-            // Bit counter (8bit cycle per byte)
+			// Bit counter (8bit cycle per byte)
 			// We use ch->bit_count to emulate the NES 8bit internal counter)
-            ch->bit_count++; 
-            if (ch->bit_count >= 8) 
-            {
-                ch->bit_count = 0;
-                
-                // Try to reload buffer from memory
-                if (ch->length > 0)
-                {
-                    NESAPUSoundDpcmRead(ch); // Reads the next byte from the IPC channel
-                    
-                    if (ch->length > 0) ch->length--; // Decrements remaining bytes
+            ch->bit_count++;
 
+            if (ch->bit_count >= 8) 
+			{
+                ch->bit_count = 0;
+				// Try to reload buffer from memory
+                if (ch->length > 0)
+				{
+                    NESAPUSoundDpcmRead(ch); // Reads the next byte from the IPC channel
+                    ch->length--; // Decrements remaining bytes
                     if (ch->length == 0)
-                    {
+					{
                         if (ch->loop_enable)
-                        {
-                            NESAPUSoundDpcmStart(ch); // Resets
-                        }
+						{
+							NESAPUSoundDpcmStart(ch); // Resets
+						}
                         else if (ch->irq_enable)
-                        {
-                            apu.dpcm.irq_report |= APU_STATUS_DMC_IRQ; // Raises a DMC IRQ
-                        }
+						{
+							apu.dpcm.irq_report |= APU_STATUS_DMC_IRQ; // Raises a DMC IRQ
+						}
                     }
                 }
             }
@@ -552,8 +603,8 @@ static Int32 __fastcall NESAPUSoundDpcmRender(void)
 
     if (ch->mute) return 0;
 
-    // Return the centered value (Range 0-127 -> -64 a 63)
-    return (ch->dacout - 64);
+	// Return the centered value (Range 0-127 -> -64 a 63)
+	return (Int32)ch->dacout - 64;
     #undef ch
 }
 

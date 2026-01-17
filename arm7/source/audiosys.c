@@ -1,5 +1,5 @@
 #include "audiosys.h"
-#include "mixer.h"
+#include "s_defs.h"
 
 /* ---------------------- */
 /*  Audio Render Handler  */

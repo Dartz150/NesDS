@@ -6,7 +6,7 @@
 #include "audiosys.h"
 #include "handler.h"
 #include "calc_lut.h"
-#include "mixer.h"
+#include "s_defs.h"
 #include "s_vrc6.h"
 
 s16 buffer [MIXBUFSIZE * 20]; // Sound Samples Buffer Size, adjust size if necessary
@@ -69,73 +69,6 @@ static inline short adjust_samples(short sample, int freq_shift, int volume)
     return sample << volume;
 }
 
-// Adjust alignment for proper volume and frequency
-// static inline short adjust_vrc(short sample, int freq_shift)
-// {
-// 	return sample << freq_shift;
-// }
-
-
-// NES APU Reg $4011, RAW PCM
-int32 Raw_PCM_Channel(u8 *buffer)
-{
-static unsigned char pcm_out = 0x3F;
-// This needs to be changed along with the Frequency
-// 120 for freq 24064Hz (697 timer freq) 
-// and 163 for DS frequency (32768Hz, 511 timer freq).
-// TODO: Add autoajust ratio formula, line/freq ratio yet unknown.
-int pcm_line = 163;
-int pcmprevol = 0x3F;
-
-	u8 *in = IPC_PCMDATA;
-	int i;
-	int count = 0;
-	int line = 0;
-	u8 *outp = buffer;
-
-	pcm_line = REG_VCOUNT;
-
-	if(1) 
-	{
-		for(i = 0; i < MIXBUFSIZE; i++) 
-		{
-			if(in[pcm_line] & 0x80)
-			{
-				pcm_out = in[pcm_line] & 0x7F;
-				in[pcm_line] = 0;
-				count++;
-			}
-			*buffer++ = (pcm_out + pcmprevol - 0x80);
-			pcmprevol = pcm_out;
-			line += 100;
-
-			// This needs to be changed along with the Frequency
-			// 152 for freq 24064Hz (697 timer freq) 
-			// and 207 for DS frequency (32768Hz, 511 timer freq).
-			// TODO: Add autoajust ratio formula, line/freq ratio yet unknown.
-			if(line >= 207)
-			{
-				line -= 207;
-				pcm_line++;
-				if(pcm_line > 262)
-				{
-					pcm_line = 0;
-				}
-			}
-		}
-	}
-	//not a playable raw pcm.
-	if(count < 13) 
-	{
-		for(i = 0; i < MIXBUFSIZE; i++) 
-		{
-			*outp++ = 0;
-			pcmprevol = 0x3F;
-			pcm_out = 0x3F;
-		}
-	}
-}
-
 //----------------------------------------------//
 //                                              //
 //********SOUND MIXER CHANNELS PARAMETERS*******//
@@ -195,11 +128,7 @@ int V2_PN = SOUND_PAN(0x2C); // PAN 0x54
 
 // VRC6 Saw
 int V3_VL = SOUND_VOL(0x54); // VOL 0x3C
-int V3_PN = SOUND_PAN(0x40); // PAN 0x54
-
-// Delta PCM Channel
-int RP_VL = SOUND_VOL(0x7F); // VOL 0x7F
-int RP_PN = SOUND_PAN(0x40); // PAN 0x40
+int V3_PN = SOUND_PAN(0x3F); // PAN 0x54
 
 void restartsound(int ch)
 {
@@ -263,13 +192,6 @@ void restartsound(int ch)
 //TODO: Channel 9-11 reserved to mix Konami VCR7 Audio ("Lagrange Point" is the only game that uses this.)
 //TODO: Channel 12-13 reserved to mix NAMCO N163 Audio (4 N163 channels per NDS channel)
 
-// Delta PCM // TODO: Move to channel 14
-	SCHANNEL_CR(9) = ENBLD |
-					RPEAT |
-					RP_VL |
-					RP_PN |
-					PCM16 ;
-
 	TIMER_CR(0) = TIMER_ENABLE; 
 	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
 }
@@ -285,7 +207,6 @@ void stopsound()
 	SCHANNEL_CR(6) = 0;
 	SCHANNEL_CR(7) = 0;
 	SCHANNEL_CR(8) = 0;
-	SCHANNEL_CR(9) = 0;
 	TIMER_CR(1) = 0;
 	TIMER_CR(0) = 0;
 }
@@ -454,8 +375,7 @@ void __fastcall mix(int chan)
 				//short int output = lowpass(input);
 				*pcmBuffer++ = output;
             }
-        }	
-		Raw_PCM_Channel((u8 *)&buffer[chan * (MIXBUFSIZE / 2) + MIXBUFSIZE * 18]);
+        }
     }
     readAPU();
     APU4015Reg(); // to refresh reg4015.
@@ -480,7 +400,6 @@ void initsound()
 	SCHANNEL_SOURCE(6) = (u32)&buffer[12*MIXBUFSIZE];
 	SCHANNEL_SOURCE(7) = (u32)&buffer[14*MIXBUFSIZE];
 	SCHANNEL_SOURCE(8) = (u32)&buffer[16*MIXBUFSIZE];
-	SCHANNEL_SOURCE(9) = (u32)&buffer[18*MIXBUFSIZE];
 
 	SCHANNEL_TIMER(0) = TIMER_NFREQ;
 	SCHANNEL_TIMER(1) = TIMER_NFREQ;
@@ -491,7 +410,6 @@ void initsound()
 	SCHANNEL_TIMER(6) = TIMER_NFREQ;
 	SCHANNEL_TIMER(7) = TIMER_NFREQ;
 	SCHANNEL_TIMER(8) = TIMER_NFREQ;
-	SCHANNEL_TIMER(9) = TIMER_NFREQ << 1;
 
 	SCHANNEL_LENGTH(0) = MIXBUFSIZE;
 	SCHANNEL_LENGTH(1) = MIXBUFSIZE;
@@ -502,7 +420,6 @@ void initsound()
 	SCHANNEL_LENGTH(6) = MIXBUFSIZE;
 	SCHANNEL_LENGTH(7) = MIXBUFSIZE;
 	SCHANNEL_LENGTH(8) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(9) = MIXBUFSIZE / 2;
 
 	SCHANNEL_REPEAT_POINT(0) = 0;
 	SCHANNEL_REPEAT_POINT(1) = 0;
@@ -513,14 +430,11 @@ void initsound()
 	SCHANNEL_REPEAT_POINT(6) = 0;
 	SCHANNEL_REPEAT_POINT(7) = 0;
 	SCHANNEL_REPEAT_POINT(8) = 0;
-	SCHANNEL_REPEAT_POINT(9) = 0;
 
 	TIMER_DATA(0) = TIMER_NFREQ << 1;
 	TIMER_DATA(1) = 0x10000 - MIXBUFSIZE;
 	memset(buffer, 0, sizeof(buffer));
-
-	memset(IPC_PCMDATA, 0, 128);
-}  
+}
 
 // // Configure Left Channel Capture
 // void startSoundCapture0(void *buffer, u16 length) 

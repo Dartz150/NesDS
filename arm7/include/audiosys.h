@@ -3,6 +3,7 @@
 
 #include <nds.h>
 #include "nestypes.h"
+#include "s_defs.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +39,7 @@ enum ApuStatus
 	Normal
 };
 
+void APU_VBlank_Sync();
 void APU4015Reg(void);
 void APUSoundInstall(void);
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph);

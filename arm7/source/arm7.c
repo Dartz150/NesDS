@@ -74,6 +74,7 @@ int main()
 		}
 		inputGetAndSend();
 		swiWaitForVBlank();
+		APU_VBlank_Sync();
 	}
 	//return 0;
 }
