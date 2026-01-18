@@ -69,12 +69,6 @@ static inline short adjust_samples(short sample, int freq_shift, int volume)
     return sample << volume;
 }
 
-//----------------------------------------------//
-//                                              //
-//********SOUND MIXER CHANNELS PARAMETERS*******//
-//                                              //
-//----------------------------------------------//
-
 static int chan = 0;
 int ENBLD = SCHANNEL_ENABLE;
 int RPEAT = SOUND_REPEAT;
@@ -82,33 +76,20 @@ int PCM_8 = SOUND_FORMAT_8BIT;
 int PCM16 = SOUND_FORMAT_16BIT;
 int ADPCM = SOUND_FORMAT_ADPCM;
 
-// Ch Volume and Pan Control  // Default Values 0Min ~ 127Max (0x0 ~ 0x7F)
-// Max is 0x7F, min is 0x00, defaults are 0x20 - 0x60 for mid panning, 0x40 for center
-
-// Pulse 1
-// int def_volume = 0x3F; // Dummy Value
-
-// int Pulse1_volume()
-// {
-// 	int init_val = SOUND_VOL(0x00);
-// 	int P1_VL = init_val + def_volume; // VOL 0x5F
-// 	return P1_VL;
-// }
-
-int P1_VL = SOUND_VOL(0x40); // VOL 0x5F
-int P1_PN = SOUND_PAN(0x20); // PAN 0X20
+int P1_VL = SOUND_VOL(0x15); // VOL 0x5F
+int P1_PN = SOUND_PAN(0x42); // PAN 0X20
 
 // Pulse 2
-int P2_VL = SOUND_VOL(0x45); // VOL 0x5F
-int P2_PN = SOUND_PAN(0x60); // PAN 0X60
+int P2_VL = SOUND_VOL(0x15); // VOL 0x5F
+int P2_PN = SOUND_PAN(0x3D); // PAN 0X60
 
 // Triangle
-int TR_VL = SOUND_VOL(0x45); // VOL 0x7F
+int TR_VL = SOUND_VOL(0x60); // VOL 0x7F
 int TR_PN = SOUND_PAN(0x40); // PAN 0X20
 
 // Noise
-int NS_VL = SOUND_VOL(0x74); // VOL 0x7A
-int NS_PN = SOUND_PAN(0x45); // PAN 0X45
+int NS_VL = SOUND_VOL(0x7F); // VOL 0x7A
+int NS_PN = SOUND_PAN(0x40); // PAN 0X45
 
 // DMC
 int DM_VL = SOUND_VOL(0x7F); // VOL 0x6F
@@ -119,15 +100,15 @@ int F1_VL = SOUND_VOL(0x5F); // VOL 0x7F
 int F1_PN = SOUND_PAN(0x40); // PAN 0X40
 
 // VRC6 Square 1
-int V1_VL = SOUND_VOL(0x7A); // VOL 0x3C
-int V1_PN = SOUND_PAN(0x54); // PAN 0x54
+int V1_VL = SOUND_VOL(0x20); // VOL 0x3C
+int V1_PN = SOUND_PAN(0x45); // PAN 0x54
 
 // VRC6 Square 2
-int V2_VL = SOUND_VOL(0x7A); // VOL 0x3C
-int V2_PN = SOUND_PAN(0x2C); // PAN 0x54
+int V2_VL = SOUND_VOL(0x20); // VOL 0x3C
+int V2_PN = SOUND_PAN(0x3B); // PAN 0x54
 
 // VRC6 Saw
-int V3_VL = SOUND_VOL(0x54); // VOL 0x3C
+int V3_VL = SOUND_VOL(0x20); // VOL 0x3C
 int V3_PN = SOUND_PAN(0x3F); // PAN 0x54
 
 void restartsound(int ch)
@@ -247,16 +228,14 @@ void __fastcall mix(int chan)
 		pcmBuffer+=MIXBUFSIZE;
         for (i = 0; i < MIXBUFSIZE; i++) 
 		{
-            int32 output = adjust_samples(NESAPUSoundNoiseRender1(), 6, 3);
-			//short int output = lowpass(input);
+            int32 output = NESAPUSoundNoiseRender1() << 9;
 			*pcmBuffer++ = output;
         }
 
 		pcmBuffer+=MIXBUFSIZE;
         for (i = 0; i < MIXBUFSIZE; i++) 
 		{
-            int32 output = adjust_samples(NESAPUSoundDpcmRender1(), 4, 5);
-			//short int output = lowpass(input);
+            int32 output = NESAPUSoundDpcmRender1() << 9;
 			*pcmBuffer++ = output;
         }
 
@@ -307,7 +286,7 @@ void initsound()
 { 		
 	int i;
 	powerOn(BIT(0));
-	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x70);
+	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x7F);
 	for(i = 0; i < 16; i++) 
 	{
 		SCHANNEL_CR(i) = 0;
