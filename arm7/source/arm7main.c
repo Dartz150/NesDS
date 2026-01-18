@@ -5,7 +5,6 @@
 #include "SoundIPC.h"
 #include "audiosys.h"
 #include "handler.h"
-#include "calc_lut.h"
 #include "s_defs.h"
 #include "s_vrc6.h"
 
@@ -58,17 +57,6 @@ void resetAPU()
 	IPC_APUR = 0;
 }
 
-// Adjust Volume and frequency using a precalculated logarithmic table
-static inline short adjust_samples(short sample, int freq_shift, int volume)
-{
-
-   	int index = sample >= 0 ? sample << freq_shift : (-sample) << freq_shift;
-    if (index >= 1024) index = 1023; // Limit max input size
-    
-    sample = sample >= 0 ? calc_table[index] : -calc_table[index];
-    return sample << volume;
-}
-
 static int chan = 0;
 int ENBLD = SCHANNEL_ENABLE;
 int RPEAT = SOUND_REPEAT;
@@ -76,15 +64,15 @@ int PCM_8 = SOUND_FORMAT_8BIT;
 int PCM16 = SOUND_FORMAT_16BIT;
 int ADPCM = SOUND_FORMAT_ADPCM;
 
-int P1_VL = SOUND_VOL(0x15); // VOL 0x5F
+int P1_VL = SOUND_VOL(0x7F); // VOL 0x5F
 int P1_PN = SOUND_PAN(0x42); // PAN 0X20
 
 // Pulse 2
-int P2_VL = SOUND_VOL(0x15); // VOL 0x5F
+int P2_VL = SOUND_VOL(0x7F); // VOL 0x5F
 int P2_PN = SOUND_PAN(0x3D); // PAN 0X60
 
 // Triangle
-int TR_VL = SOUND_VOL(0x60); // VOL 0x7F
+int TR_VL = SOUND_VOL(0x7F); // VOL 0x7F
 int TR_PN = SOUND_PAN(0x40); // PAN 0X20
 
 // Noise
@@ -96,19 +84,19 @@ int DM_VL = SOUND_VOL(0x7F); // VOL 0x6F
 int DM_PN = SOUND_PAN(0x40); // PAN 0x40
 
 // FDS
-int F1_VL = SOUND_VOL(0x5F); // VOL 0x7F
+int F1_VL = SOUND_VOL(0x7F); // VOL 0x7F
 int F1_PN = SOUND_PAN(0x40); // PAN 0X40
 
 // VRC6 Square 1
-int V1_VL = SOUND_VOL(0x20); // VOL 0x3C
+int V1_VL = SOUND_VOL(0x7F); // VOL 0x3C
 int V1_PN = SOUND_PAN(0x45); // PAN 0x54
 
 // VRC6 Square 2
-int V2_VL = SOUND_VOL(0x20); // VOL 0x3C
+int V2_VL = SOUND_VOL(0x7F); // VOL 0x3C
 int V2_PN = SOUND_PAN(0x3B); // PAN 0x54
 
 // VRC6 Saw
-int V3_VL = SOUND_VOL(0x20); // VOL 0x3C
+int V3_VL = SOUND_VOL(0x7F); // VOL 0x3C
 int V3_PN = SOUND_PAN(0x3F); // PAN 0x54
 
 void restartsound(int ch)
@@ -207,14 +195,14 @@ void __fastcall mix(int chan)
 
         for (i = 0; i < MIXBUFSIZE; i++)
 		{			
-			int32 output = adjust_samples(NESAPUSoundSquareRender1(), 6, 4);
+			int32 output = NESAPUSoundSquareRender1() << 8;
 			*pcmBuffer++ = output;
         }
 
 		pcmBuffer+=MIXBUFSIZE;
   		for (i = 0; i < MIXBUFSIZE; i++)
  		{
-            int32 output = adjust_samples(NESAPUSoundSquareRender2(), 6, 4);
+            int32 output = NESAPUSoundSquareRender2() << 8;
 			*pcmBuffer++ = output;
         }
 
@@ -235,7 +223,7 @@ void __fastcall mix(int chan)
 		pcmBuffer+=MIXBUFSIZE;
         for (i = 0; i < MIXBUFSIZE; i++) 
 		{
-            int32 output = NESAPUSoundDpcmRender1() << 9;
+            int32 output = NESAPUSoundDpcmRender1() << 8;
 			*pcmBuffer++ = output;
         }
 
@@ -244,7 +232,7 @@ void __fastcall mix(int chan)
 		{
             for (i = 0; i < MIXBUFSIZE; i++) 
 			{
-                int32 output = adjust_samples(FDSSoundRender(), 0, 4);
+                int32 output = FDSSoundRender() << 2;
 				*pcmBuffer++ = output;
             }
 		} 
@@ -259,21 +247,21 @@ void __fastcall mix(int chan)
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++)
 			{
-				int32 output = VRC6SoundRenderSquare1() << 11;
+				int32 output = VRC6SoundRenderSquare1() << 9;
 				*pcmBuffer++ = output;
             }
 
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++) 
 			{
-				int32 output = VRC6SoundRenderSquare2() << 11;
+				int32 output = VRC6SoundRenderSquare2() << 9;
 				*pcmBuffer++ = output;
             }
 
 			pcmBuffer+=MIXBUFSIZE;
             for (i = 0; i < MIXBUFSIZE; i++)
 			{
-				int32 output = VRC6SoundRenderSaw() << 11;
+				int32 output = VRC6SoundRenderSaw() << 9;
 				*pcmBuffer++ = output;
             }
         }
@@ -287,7 +275,7 @@ void initsound()
 	int i;
 	powerOn(BIT(0));
 	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x7F);
-	for(i = 0; i < 16; i++) 
+	for(i = 0; i < 16; i++)
 	{
 		SCHANNEL_CR(i) = 0;
 	}
