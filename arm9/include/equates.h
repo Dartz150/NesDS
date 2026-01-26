@@ -8,7 +8,7 @@ DEBUGSTEP	= 0
 @----------------------------------------------------------------------------
 
 wram = NES_DRAM	//64k ram is reserved here.
-ROM_MAX_SIZE = 0x2b0000		//2,7MB free rom space
+ROM_MAX_SIZE = 0x280000		//2,5MB free rom space
 MAXFILES	 = 1024
 
 //IPC_* also in c_defs.h, KEEP BOTH UPDATED
@@ -99,7 +99,7 @@ romMask:		.word 0
 prgSize8k:		.word 0
 prgSize16k:		.word 0
 prgSize32k:		.word 0
-mapperInitPtr:	.word 0
+mapperNr:		.word 0
 emuFlags:		.word 0
 prgcrc:			.word 0
 
@@ -109,7 +109,8 @@ renderCount:	.word 0
 tempData:		.space 20*4
 
 cartFlags:		.byte 0
-padding:		.skip 3 ;@ Align
+subMapper:		.byte 0
+padding:		.skip 2 ;@ Align
 nesMachineSize:
 
 ;@-----------------------joyflags

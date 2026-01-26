@@ -13,13 +13,13 @@ int save_slots = 0;
 int slots_num = 0;
 bool use_saves_dir = false;
 
-//a bad idea...
+// a bad idea...
 void reg4015interrupt(u32 msg, void *none)
 {
 	if (msg & 0xFF00) {
-		IPC_APUIRQ = 1;								//This value is cleared when read.
+		IPC_APUIRQ = 1;								// This value is cleared when read.
 	}
-	IPC_REG4015 = msg&0xFF;							//Indicates that apu status is changed.
+	IPC_REG4015 = msg&0xFF;							// Indicates that apu status is changed.
 }
 
 /*****************************
@@ -137,7 +137,7 @@ void touch_update() {
 		else
 			ts = 1;
 	}
-	touchstate=ts;
+	touchstate = ts;
 }
 
 /*****************************
@@ -149,14 +149,14 @@ void touch_update() {
 * description:		used in menu.called by every string in one frame.
 ******************************/
 int do_touchstrings(touchstring *ts, int pushstate) {
-	char *str;
+	const char *str;
 	int color, offset, xmin, xmax, ymin, ymax, strnum, strtouched;
 	strnum = 0;
 	strtouched = -1;
 	do {
 		str = ts->str;
 		offset = ts->offset;
-		color = (pushstate&1) ? 0x2000:0x1000;
+		color = (pushstate & 1) ? 0x2000:0x1000;
 		pushstate >>= 1;
 
 		if (touchstate > 1) {
@@ -222,10 +222,10 @@ void load_sram() {
 
 	enter_save_context();
 
-	romfileext[0]='s';
-	romfileext[1]='a';
-	romfileext[2]='v';
-	romfileext[3]=0;
+	romfileext[0] = 's';
+	romfileext[1] = 'a';
+	romfileext[2] = 'v';
+	romfileext[3] = 0;
 	f = fopen(romfilename,"r");
 	if (f) {
 		fread((u8*)CART_SRAM,1,0x2000,f);
@@ -248,10 +248,10 @@ void save_sram() {
 
 	enter_save_context();
 
-	romfileext[0]='s';
-	romfileext[1]='a';
-	romfileext[2]='v';
-	romfileext[3]=0;
+	romfileext[0] = 's';
+	romfileext[1] = 'a';
+	romfileext[2] = 'v';
+	romfileext[3] = 0;
 	f = fopen(romfilename, "w");
 	if (f) {
 		fwrite((u8 *)CART_SRAM, 1, 0x2000, f);
@@ -278,10 +278,10 @@ void write_savestate(int num) {
 
 	enter_save_context();
 
-	romfileext=strrchr(romfilename,'.')+1;
-	romfileext[0]='s';
-	romfileext[1]='s';
-	romfileext[2]='0' + num;
+	romfileext = strrchr(romfilename,'.')+1;
+	romfileext[0] = 's';
+	romfileext[1] = 's';
+	romfileext[2] = '0' + num;
 	savestate((u32)p);
 	f = fopen(romfilename,"w");
 	if (f) {
@@ -311,16 +311,16 @@ u32 read_savestate(u32 num) {
 
 	enter_save_context();
 
-	romfileext=strrchr(romfilename,'.')+1;		//make sure everything is ok...
-	romfileext[0]='s';
-	romfileext[1]='s';
-	romfileext[2]='0' + num;
+	romfileext = strrchr(romfilename,'.')+1;		//make sure everything is ok...
+	romfileext[0] = 's';
+	romfileext[1] = 's';
+	romfileext[2] = '0' + num;
 
 	f = fopen(romfilename,"r");
 	if (f) {
-		i=fread(p,1,SAVESTATESIZE,f);
+		i = fread(p,1,SAVESTATESIZE,f);
 		fclose(f);
-		if(i==SAVESTATESIZE)
+		if (i == SAVESTATESIZE)
 			loadstate((u32)p);
 		recorder_reset();
 	}
@@ -366,7 +366,7 @@ void do_shortcuts()
 		}
 	}
 	count++;
-	if(count > 1000)
+	if (count > 1000)
 		count = 1000;
 }
 
@@ -423,22 +423,22 @@ void do_quickf(int func)
 		}
 		break;
 	case 11:
-		if (debuginfo[MAPPER] == 20) {
+		if (globals.mapperNr == 20) {
 			fdscmdwrite(0);
 		}
 		break;
 	case 12:
-		if (debuginfo[MAPPER] == 20) {
+		if (globals.mapperNr == 20) {
 			fdscmdwrite(1);
 		}
 		break;
 	case 13:
-		if (debuginfo[MAPPER] == 20) {
+		if (globals.mapperNr == 20) {
 			fdscmdwrite(2);
 		}
 		break;
 	case 14:
-		if (debuginfo[MAPPER] == 20) {
+		if (globals.mapperNr == 20) {
 			fdscmdwrite(3);
 		}
 		break;
@@ -462,7 +462,7 @@ void do_quickf(int func)
 }
 
 
-char *ishortcuts[] = {
+const char *ishortcuts[] = {
 "sc_loadstate",
 "sc_savestate",
 "sc_loadrom",
@@ -484,7 +484,7 @@ char *ishortcuts[] = {
 "sc_rewind",
 };
 
-char *igestures[] = {
+const char *igestures[] = {
 "ge_loadstate",
 "ge_savestate",
 "ge_loadrom",
@@ -506,7 +506,7 @@ char *igestures[] = {
 "ge_rewind",
 };
 
-char *hshortcuts[] = {
+const char *hshortcuts[] = {
 "Load from a state",
 "Save to a state",
 "Show the rom menu",
@@ -528,7 +528,7 @@ char *hshortcuts[] = {
 "Rewind.",
 };
 
-char *keystrs[] = {
+const char *keystrs[] = {
 "KEY_A",
 "KEY_B",
 "KEY_SELECT",

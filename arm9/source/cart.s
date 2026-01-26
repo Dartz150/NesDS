@@ -105,6 +105,7 @@ mappertbl:
 	.word 207,mapper207init
 	.word 210,mapper210init
 	.word 216,mapper216init
+	.word 224,mapper224init
 	.word 225,mapper225init
 	.word 226,mapper226init
 	.word 227,mapper227init
@@ -120,6 +121,7 @@ mappertbl:
 	.word 253,mapper253init
 	.word 255,mapper255init
 	.word 256,mappernsfinit
+	.word 268,mapper268init
 	.word -1,mapper0init
 @---------------------------------------------------------------------------------
 @ name:		initcart
@@ -223,21 +225,9 @@ initcart: @called from C:  r0=rom, (r1=emuFlags?)
 	mov r1,m6502zpage		@ m6502zpage,=NES_RAM
 	mov r2,#0x800/4			
 	bl filler				@ reset NES RAM
-	mov r0,#0				@ clear nes sram
-	ldr r1,=CART_SRAM
+	ldr r1,=CART_SRAM		@ clear nes sram
 	mov r2,#0x2000/4
 	bl filler
-	adrl_ r1,mapperData		@ clear mapperData so we dont have to do that in every MapperInit.
-	mov r2,#96/4
-	bl filler
-
-	mov r0,#0x7c			@ I didnt like the way below to change the init mem for fixing some games.
-	ldr r1,=CART_SRAM
-	ldr r2,=0x147d			@ 0x7c7d
-	strb r0,[r1,r2]			@ for "Low G Man".
-	add r2,r2,#0x100
-	mov r0,#0x7d
-	strb r0,[r1,r2]			@ for "Low G Man".
 
 	ldr r0, =0x4000004
 	mov r1, #0x8
@@ -289,14 +279,21 @@ initcart: @called from C:  r0=rom, (r1=emuFlags?)
 	ldr r1,=CART_SRAM-0x6000	@ $6000 for mapper 40, 69 & 90 that has rom here.
 	str_ r1,m6502MemTbl+12
 
-	ldrb r1,[r3,#-10]		@ get mapper#
+	ldrb r0,[r3,#-10]		@ get mapper#
 	ldrb r2,[r3,#-9]
-	and r0,r2,#0x0C			@ long live DiskDude!
-	cmp r0,#0x04
+	and r1,r2,#0x0C
+	cmp r1,#0x04			@ long live DiskDude!
 	moveq r2,#0				@ ignore high nibble if header looks bad
-	and r0,r2,#0xf0
-	orr r0,r0,r1,lsr#4
-					@lookup mapper*init
+	and r2,r2,#0xf0
+	cmp r1,#0x08			@ NES 2.0?
+	bne notNES2
+	ldrb r1,[r3,#-8]
+	mov r1,r1,ror#4
+	strb_ r1,subMapper
+	orr r2,r2,r1,lsr#20
+notNES2:
+	orr r0,r2,r0,lsr#4
+					@ lookup mapper*init
 
 	ldrb r1, [r3, #-16]		@ fds, for 'F'
 	cmp r1, #70
@@ -310,10 +307,11 @@ initcart: @called from C:  r0=rom, (r1=emuFlags?)
 	tst r1, #NSFFILE
 	movne r0, #256
 
-	ldr r1,=mappertbl
+	str_ r0,mapperNr
 @---
 	DEBUGINFO MAPPER r0
 @---
+	ldr r1,=mappertbl
 lc0:
 	ldr r2,[r1],#8
 	teq r2,r0
@@ -324,7 +322,7 @@ lc1:					@ call mapperXXinit
 	ldr r0,[r1,#-4]		@ r0 = mapperxxxinit
 	ldmia r0!,{r1-r4}
 	stmia r5,{r1-r4}	@ set default (write) operation for NES(0x8000 ~ 0xFFFF), maybe 'rom_W', according to Mapper.
-	str_ r0,mapperInitPtr
+	str r0,mapperInitPtr
 
 	bl NES_reset
 	bl recorder_reset	@ init rewind control stuff
@@ -416,17 +414,16 @@ ls0:	ldr r5,[r6],#4
 	subs r0,r0,#1
 	bne ls1
 
-	ldr_ r2,romBase		@adjust ptr shit (see savestate above)
+	ldr_ r2,romBase		@ adjust ptr shit (see savestate above)
 	bl fixromptrs
 @---
-	ldr r3,=CART_VRAM+0x2000	@ write all nametbl + attrib
+	ldr r3,=NES_NTRAM	@ write all nametbl + attrib
 	ldr r4,=NDS_BG
 ls4:	mov r5,#0
 ls3:	mov r1,r3
 	mov r2,r4
 	mov addy,r5
 	ldrb r0,[r1,addy]
-	@sub sp, sp, #4			@This is because writeBG will use ldmfd sp!,{addy}, out of date
 	bl writeBG
 	add r5,r5,#1
 	cmp r5,#0x400
@@ -453,8 +450,12 @@ NES_reset:
 	ldr globalptr,=globals
 	ldr m6502zpage,=NES_RAM
 
-	ldr_ r0,mapperInitPtr
-	blx r0						@ Go mapper_init
+	mov r0,#0
+	adrl_ r1,mapperData		@ Clear mapperData so we dont have to do that in every MapperInit.
+	mov r2,#96/4
+	bl filler
+	ldr r0,mapperInitPtr
+	blx r0					@ Go mapper_init
 
 	ldrb_ r1,cartFlags
 	tst r1,#MIRROR		;@ Set default mirror, horizontal mirroring
@@ -599,9 +600,10 @@ map89ABCDEF_:
 	str_ r0,m6502MemTbl+28
 	b flush
 @---------------------------------------------------------------------------------
+mapperInitPtr:	.word 0
 
-.section .dtcm, "aw"
+	.section .sbss				;@ This is DTCM on NDS with devkitARM
 globals:
 nesMachine:
 rp2A03:
-	.skip nesMachineSize
+	.space nesMachineSize
