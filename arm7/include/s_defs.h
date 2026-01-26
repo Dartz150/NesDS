@@ -48,7 +48,6 @@ extern "C" {
  * DS expects signed 16-bit PCM (SOUNDxCNT Format=1: PCM16, range -32768 to +32767).
  * We center post-mixer to bipolar for full dynamic range.
  */
-#define GAIN       1      // Linear gain post-mixer (1 = full NES scale; >1 risks DS mixer overflow).
 #define DC_OFFSET  16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
 #define MAX_S16    32767  // 7FFFh: DS PCM16 max.
 #define MIN_S16   -32768  // -8000h: DS PCM16 min.

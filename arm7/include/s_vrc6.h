@@ -43,15 +43,11 @@ typedef struct
     Uint8 p_low;  // Pulse Line Low.
 } VRC6SOUND;
 
-void VRC6SoundSquareReset(VRC6_SQUARE *ch);
-void VRC6SoundSawReset(VRC6_SAW *ch);
 void VRC6SoundReset(void);
 
 // VRC6 Init
 void VRC6SoundInstall(void);
-int32_t VRC6SoundRenderSquare1(void);
-int32_t VRC6SoundRenderSquare2(void);
-int32_t VRC6SoundRenderSaw(void);
+int32_t VRC6SoundRender();
 
 // VRC6 Write regs
 void VRC6SoundWrite9000(Uint address, Uint value);

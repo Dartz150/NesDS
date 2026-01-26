@@ -143,10 +143,10 @@ int ADPCM = SOUND_FORMAT_ADPCM;
 #define U7_100_PCT   U7_PCT(100)   // 127
 
 //RIGHT
-int R_VOL = SOUND_VOL(U7_75_PCT);
+int R_VOL = SOUND_VOL(U7_100_PCT);
 int R_PAN = SOUND_PAN(U7_0_PCT);
 // LEFT
-int L_VOL = SOUND_VOL(U7_75_PCT);
+int L_VOL = SOUND_VOL(U7_100_PCT);
 int L_PAN = SOUND_PAN(U7_100_PCT);
 
 // This emulates the NES APU mixer (NESDev wiki: APU Mixer).
@@ -170,22 +170,18 @@ void __fastcall mix(int chan)
         int32_t tnd   = tnd_table[(3 * NESAPUSoundTriangleRender1()) + 
                                   (2 * NESAPUSoundNoiseRender1()) + 
                                   NESAPUSoundDpcmRender1()];
+		// Mix 2A03 APU			  
+        int32_t s_apu = (pulse + tnd);
 
-		// Convert unipolar (0 to 32767) to bipolar (-16384 to 16383)
-        // This centers the waveform to prevent DC bias artifacts in the DS mixer.
-        int32_t s_apu = (pulse + tnd) - DC_OFFSET;
-
-		// VRC6 Expansion: Added post-offset. 
-        // Note: << 8 is a temporary gain factor until non-polar mixing is implemented.
+		// VRC6 Expansion:
         if (vrc6) 
 		{
-            s_apu += (VRC6SoundRenderSquare1() + 
-                      VRC6SoundRenderSquare2() + 
-                      (VRC6SoundRenderSaw())) << 8;
+            s_apu += VRC6SoundRender();
         }
-
-		// Apply final gain and clamp to 16-bit range (-32768 to 32767)
-		int32_t mixed = s_apu << GAIN;
+		// Convert unipolar (0 to 32767) to bipolar (-16384 to 16383)
+        // This centers the waveform to prevent artifacts in the DS mixer.
+		int32_t mixed = ((s_apu - DC_OFFSET) * 3) >> 1; // Apply final linear gain (1.5x factor is the sweet spot).
+		// Clamp to 16-bit range (-32768 to 32767)
 		clampSamples16(mixed);
         *pcmBuffer++ = (int16_t)mixed;
     }

@@ -3,6 +3,7 @@
 // (:::) VRC6 AUDIO ENGINE (:::) //
 // Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio
 
+#define VRC6_MIX_FACTOR 380 //  23,180 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 380
 static VRC6SOUND vrc6s;
 
 /// @brief On some boards (Mapper 26), the A0 and A1 lines were switched, so for those, 
@@ -36,26 +37,31 @@ static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch)
     while (ch->cycles < 0)
     {
         ch->cycles += ch->spd;
-        ch->adr++;
+        // Spec: this counts from 15 to 0
+        if (ch->adr == 0) ch->adr = 15;
+        else ch->adr--;
     }
-    ch->adr &= 0xF;
+    
+    Uint8 volume = ch->regs[0] & 0x0F;
+    Uint8 duty   = (ch->regs[0] >> 4) & 0x07;
+    bool mode    = (ch->regs[0] & 0x80); // Bit 7 from the first reg is Mode
 
-    Uint32 output = ch->regs[0] & 0x0F;
-    if (!(ch->regs[0] & 0x80) && (ch->adr < ((ch->regs[0] >> 4) + 1)))
-    {
-        return 0;
-    }
-    return output;
+    // If Mode is 1, ignore duty and return volume.
+    if (mode) return volume;
+
+    // If the current step is <= Duty, return volume, otherwise 0.
+    // This generates a inverted pulse, per the nesDev spec.
+    return (ch->adr <= duty) ? volume : 0;
 }
 
 static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
 {
     // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
-	if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80))
-	{
-		return 0;
-	}
+    if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80))
+    {
+        return 0;
+    }
 
     ch->cycles -= ch->cps;
     while (ch->cycles < 0)
@@ -66,32 +72,30 @@ static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
         // Accumulator increments only on even phases
         if ((ch->adr & 1) == 0)
         {
-            ch->output += (ch->regs[0] & 0x3F);
+            if (ch->adr < 14) 
+            {
+                ch->output += (ch->regs[0] & 0x3F); // Accum Rate
+            }
         }
+
         // Reset after 14 phases
-        if (ch->adr == 14)
+        if (ch->adr >= 14)
         {
             ch->adr = 0;
             ch->output = 0;
         }
     }
 
-    return (ch->output >> 3) & 0x1f; // Final Adjustment
+    // Return 5 higher bits from the accum (0-31)
+    return (ch->output >> 3) & 0x1F;
 }
 
-int32_t VRC6SoundRenderSquare1(void)
+// VRC6 Mixer. NesDev: "Lineal 6 bit sum (max 61: 15 + 15 + 31)"
+int32_t VRC6SoundRender() 
 {
-	return VRC6SoundSquareRender(&vrc6s.square[0]);
-}
-
-int32_t VRC6SoundRenderSquare2(void)
-{
-	return VRC6SoundSquareRender(&vrc6s.square[1]);
-}
-
-int32_t VRC6SoundRenderSaw(void)
-{
-	return VRC6SoundSawRender(&vrc6s.saw);
+    return (VRC6SoundSquareRender(&vrc6s.square[0]) + 
+            VRC6SoundSquareRender(&vrc6s.square[1]) + 
+            VRC6SoundSawRender(&vrc6s.saw)) * VRC6_MIX_FACTOR;
 }
 
 static void VRC6SoundWriteSquare(VRC6_SQUARE *ch, Uint address, Uint value)
