@@ -144,26 +144,14 @@ void VRC6SoundWriteB000(Uint address, Uint value)
 
 void VRC6SoundSquareReset(VRC6_SQUARE *ch)
 {
-	if(getApuCurrentRegion() == PAL)
-	{
-		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
-	}
-	else
-	{
-		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
-	}
+	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 void __fastcall VRC6SoundSawReset(VRC6_SAW *ch)
 {
-	if(getApuCurrentRegion() == PAL)
-	{
-		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 26 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
-	}
-	else
-	{
-		ch->cps = GetFixedPointStep(NES_BASECYCLES, 24 * NESAudioFrequencyGet(), CPS_SHIFT);
-	}
+	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 static NES_RESET_HANDLER s_vrc6_reset_handler[] =

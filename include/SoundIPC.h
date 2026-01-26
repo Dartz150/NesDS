@@ -17,6 +17,8 @@ extern "C" {
 #define FIFO_APU_NORM 		9
 #define FIFO_SOUND_UPDATE	10
 #define FIFO_AUDIO_FILTER 	11
+#define FIFO_APU_PULSE_SW   12
+#define FIFO_APU_PULSE_HW   13
 
 #ifdef __cplusplus
 }

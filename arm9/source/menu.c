@@ -96,15 +96,28 @@ struct menu_item menu_display_items[] =
 		.x = 1, .y = 15, .w = 6, .h = 3,
 		.func = menu_display_br
 	},
-	// Invert Duty Cycle TODO:  Move it to sound settings.
+	// Invert Duty Cycle TODO:  Move this to sound settings.
 	{
 		.name = "Invert\r Duty",
 		.type = 1,
-		.x = 20, .y = 15, .w = 7, .h = 3,
+		.x = 20, .y = 20, .w = 7, .h = 3,
 		.func = menu_display_br
 	},
 	{
 		.name = "Normal\r Duty",
+		.type = 1,
+		.x = 20, .y = 15, .w = 7, .h = 3,
+		.func = menu_display_br
+	},
+	// Sound Render Modes
+		{
+		.name = "HW PSG\r Sound",
+		.type = 1,
+		.x = 20, .y = 5, .w = 7, .h = 3,
+		.func = menu_display_br
+	},
+	{
+		.name = "SW\r Sound",
 		.type = 1,
 		.x = 20, .y = 10, .w = 7, .h = 3,
 		.func = menu_display_br
@@ -187,7 +200,7 @@ struct menu_item menu_emulation_items[] = {
 
 struct menu_unit menu_display = {
 	.top = "Display",
-	.subcnt = 6,
+	.subcnt = 8,
 	.start = menu_display_start,
 	.item = menu_display_items,
 };

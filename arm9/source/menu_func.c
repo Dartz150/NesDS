@@ -565,13 +565,25 @@ void menu_display_br(void)
 		__emuflags |= SCREENSWAP;
 		break;
 	case 4:
+		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
 		fifoSendValue32(FIFO_USER_08, FIFO_APU_SWAP);
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);	
+		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
 		break;
 	case 5: 
+		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
 		fifoSendValue32(FIFO_USER_08, FIFO_APU_NORM);
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
+		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
 		break;
+	case 6:
+		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
+		fifoSendValue32(FIFO_USER_08, FIFO_APU_PULSE_HW);
+		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
+		break;
+	case 7: 
+		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
+		fifoSendValue32(FIFO_USER_08, FIFO_APU_PULSE_SW);
+		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
+		break;	
 	}	
 	menu_stat = 3;
 }

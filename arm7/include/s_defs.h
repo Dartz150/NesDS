@@ -43,9 +43,19 @@ extern "C" {
 // MIXER DEFINITIONS
 
 #define MIXBUFSIZE                     (1 << 8)
+/*
+ * DS Hardware Constants (from No$gba DS Sound docs: Channel/Mixer Bit-Widths section)
+ * DS expects signed 16-bit PCM (SOUNDxCNT Format=1: PCM16, range -32768 to +32767).
+ * We center post-mixer to bipolar for full dynamic range.
+ */
+#define GAIN       1      // Linear gain post-mixer (1 = full NES scale; >1 risks DS mixer overflow).
+#define DC_OFFSET  16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
+#define MAX_S16    32767  // 7FFFh: DS PCM16 max.
+#define MIN_S16   -32768  // -8000h: DS PCM16 min.
 // Total Samples the DS generates exactly in one frame
 #define SAMPLES_PER_DS_FRAME           (DS_SOUND_FREQUENCY / (DS_BUS_CLOCK / NDS_CYCLES_PER_FRAME))
 
+// struct unused yet
 enum AudioFilterType
 {
    NES_AUDIO_FILTER_NONE,
@@ -57,11 +67,17 @@ enum AudioFilterType
 };
 
 
-//Pulse Channels 1 and 2
+// Pulse Channels 1 and 2 Software renderers
 Int32 NESAPUSoundSquareRender1();
 Int32 NESAPUSoundSquareRender2();
 
-//Triangle/Noise/DMC Channels
+// Pulse Channels 1 and 2 Hardware renderers
+// PSG channel writes change the sound INSTANTLY. 
+// Always call this after the software sound renderers to avoid sound latency.
+void NESAPUSoundSquareHWRender();
+void NesAPUSoundSquareHWStop();
+
+//Triangle/Noise/DMC Channels ("TND")
 Int32 NESAPUSoundTriangleRender1();
 Int32 NESAPUSoundNoiseRender1();
 Int32 NESAPUSoundDpcmRender1();

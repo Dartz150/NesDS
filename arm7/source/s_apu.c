@@ -9,6 +9,12 @@
 #include "c_defs.h"
 #include "s_vrc6.h"
 #include "s_apu_defs.h"
+#include "soundChannel.h"
+
+#define NES_APU_SQUARE_1_CH  8
+#define NES_APU_SQUARE_2_CH  9
+#define SQUARE_PAN_1_CH      60
+#define SQUARE_PAN_2_CH      68
 
 /* ------------------------- */
 /*  NES INTERNAL SOUND(APU)  */
@@ -273,6 +279,138 @@ inline void SweepStep(SWEEP *sw, Uint32 *wl)
 	}
 }
 
+static inline u16 nesToDsTimer(Uint32 nes_wl, bool is_pal) {
+    uint64_t bus_clock = DS_BUS_CLOCK / 2; // Sound hardware runs at half the DS Bus Clock
+    uint64_t cpu_clock = is_pal ? NES_CPU_PAL : NES_CPU_NTSC;
+    
+    // (bus_clock * nes_divisor) / (cpu_clock * psg_ds_steps)
+    // (bus_clock * 16) / (cpu_clock * 8) -> (bus_clock * 2) / cpu_clock
+    
+    uint32_t ratio = (bus_clock * 2 * (nes_wl + 1)) / cpu_clock;
+    
+    if (ratio >= 65535) 
+	{
+		return 0; // Frecuency too low
+	}
+    return (u16)(65536 - ratio);
+}
+
+static u32 nesDutyToDs(u8 duty_value) {
+    // duty_values derived from square_duty_table[4]
+    switch(duty_value) {
+        case 0x02: // 2/16 steps = 12.5%
+            return SOUNDCNT_DUTY_12_5;
+        case 0x04: // 4/16 steps = 25%
+            return SOUNDCNT_DUTY_25_0;  
+        case 0x08: // 8/16 steps = 50%
+            return SOUNDCNT_DUTY_50_0; 
+        case 0x0C: // 12/16 steps = 75%
+            return SOUNDCNT_DUTY_75_0;
+        default:
+            return SOUNDCNT_DUTY_50_0;
+    }
+}
+
+/**
+ * *NOTE (DS Hardware PSG Channel):
+ * A 2-iteration loop is utilized here as a "cadence hack" for timing. 
+ * Extensive testing revealed that using a 'while' loop like we do in the 
+ * software pulse renderer, causes the DS PSG hardware to glitch, resulting in 
+ * static, monotonic tone sweeps.
+ * * This design distributes APU cycles across the 60Hz video frame as follows:
+ * - Envelope Decay: 2 steps * 60Hz = 120Hz (Balanced compromise).
+ * - Sweep: 1 step (even phase) * 60Hz = 60Hz.
+ * - Length Counter: 1 step per call = 60Hz.
+ * * While not a 1:1 mathematical match for the NES Frame Counter, this configuration provides 
+ * the best fidelity on DS hardware.
+ */
+static void NESAPUSoundSquareUpdateHW(NESAPU_SQUARE *ch, int ds_chan, int pan)
+{
+	// TIMING LOGIC ("Cadence" hack)
+	// Frame Counter and sequencer (Envelopes, Sweeps, Length)
+	if (ch->fp & 1)
+	{
+		LengthCounterStep(&ch->lc);       // 60Hz
+	}
+	// Sub-cycle loop to provide higher resolution for Envelopes and Sweeps
+	for (int i = 0; i < 2; i++)
+	{
+		if (!(ch->fp & 1))
+		{
+			SweepStep(&ch->sw, &ch->wl);  // ~120Hz
+		}
+		
+		EnvelopeDecayStep(&ch->ed);      // ~240Hz
+		ch->fp++;
+	}
+
+    // Calculate target wavelength to handle Sweep
+    Uint32 sweep_target = ch->wl;
+    if (ch->sw.active && ch->sw.shifter > 0)
+	{
+        if (ch->sw.direction)
+		{
+			sweep_target -= (sweep_target >> ch->sw.shifter);
+		}
+        else
+		{
+			sweep_target += (sweep_target >> ch->sw.shifter);
+		}
+    }
+
+    // Immediate silence if wavelength is out of range, length counter is zero, or key is off
+    bool is_silenced = (ch->wl < 8 || sweep_target > 0x7FF || ch->lc.counter == 0 || !ch->key);
+
+    if (is_silenced) 
+	{
+        if (snd_isChannelPlaying(ds_chan)) snd_stopChannel(ds_chan);
+        return;
+    }
+
+	// Convert wavelenght, duty and volume parameters to the DS PSG hardware channel
+    u16 ds_wl = nesToDsTimer(ch->wl, (getApuCurrentRegion() == PAL));
+    u32 ds_duty  = nesDutyToDs(ch->duty);
+    u8 volume    = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
+    u8 ds_vol    = volume << 1; 
+
+    if (!snd_isChannelPlaying(ds_chan)) 
+	{
+		// PSG channel Enable/Update
+        REG_SOUNDxTMR(ds_chan) = ds_wl;
+        REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PSG | 
+                                 SOUNDCNT_MODE_LOOP | ds_duty | 
+                                 SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
+    } 
+	else 
+	{
+        // If channel is already active, update Frequency ALWAYS for smooth Sweeps
+        REG_SOUNDxTMR(ds_chan) = ds_wl;
+
+        // Update Volume and Duty ONLY if they changed to prevent audio popping/artifacts
+        u32 current_cnt = REG_SOUNDxCNT(ds_chan);
+        u32 new_cnt = (current_cnt & ~(0x7F | SOUNDCNT_DUTY_MASK)) | ds_vol | ds_duty;
+        if (current_cnt != new_cnt) 
+		{
+            REG_SOUNDxCNT(ds_chan) = new_cnt;
+        }
+    }
+}
+
+// PSG channel writes change the sound INSTANTLY. 
+// Always call this after the software sound renderers to avoid sound latency.
+void NESAPUSoundSquareHWRender()
+{
+        NESAPUSoundSquareUpdateHW(&apu.square[0], NES_APU_SQUARE_1_CH, SQUARE_PAN_1_CH);
+        NESAPUSoundSquareUpdateHW(&apu.square[1], NES_APU_SQUARE_2_CH, SQUARE_PAN_2_CH);
+}
+
+void NesAPUSoundSquareHWStop()
+{
+    snd_stopChannel(NES_APU_SQUARE_1_CH);
+    snd_stopChannel(NES_APU_SQUARE_2_CH);
+}
+
+// Software Pulse Renderer
 static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
 {
 	Int32 output;
@@ -324,10 +462,9 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
     output = ch->ed.disable
 		? ch->ed.volume
 		: ch->ed.counter;
-	// Generate Wave	
-	return (ch->st >= ch->duty)
-		? -output
-		: output;
+	// Generate Wave: Duty cycle sequencer (16 steps).
+    // NES APU mixer expects unipolar levels: HIGH phase = output (0-15), LOW phase = 0.
+	return (ch->st >= ch->duty) ? output : 0; // (NESDev: HIGH=vol, LOW=0).
 }
 
 Int32 NESAPUSoundSquareRender1()
@@ -390,9 +527,9 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 	{
 		output = 0x1F - output; // Invert to create the slope
 	}
-	// IMPORTANT: Return the real unsigned value (0-15)
-    // NEVER invert the sign using -output.
-	return output - 8;
+
+	// NES APU mixer expects unipolar (0-15); no signed offset here—DAC handled in mixer.
+	return output; // 0-15 unipolar (e.g., 0=peak low, 15=peak high).
 }
 
 Int32 NESAPUSoundTriangleRender1()
@@ -444,7 +581,7 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 	// Volume gate
 	// If bit 0 is 1, silence the channel. 
 	// If is 0, let volume pass.
-	if (ch->rng & 1) 
+	if (ch->rng & 1)
 	{ 
 		return 0;
 	}
@@ -453,9 +590,8 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 		? ch->ed.volume 
 		: ch->ed.counter;
 	
-	// Center volume (0-15 -> -8-7)
-	// For some reason yet unknown, vol -8 produces too much noise, so we leave vol alone
-    return (Int32)vol;
+	// NES APU mixer expects unipolar (0-15); gated to 0 on bit0=1 for noise bursts.
+    return (Int32)vol; // 0-15 unipolar (silence=0, full vol=15).
 }
 
 Int32 NESAPUSoundNoiseRender1()
@@ -533,7 +669,6 @@ inline static void NESAPUReplayDmcPcmWrites(NESAPU_DPCM *ch)
 		current_idx = samp_rate - 1;
 	}
     int pcm_idx = (current_idx * NES_SCANLINES) / samp_rate;
-	// Read/Write and clean (Atomic-like)
     if (raw_pcm_buffer[pcm_idx] & 0x80) 
     {
         ch->dacout = raw_pcm_buffer[pcm_idx] & 0x7F;
@@ -606,8 +741,8 @@ static Int32 __fastcall NESAPUSoundDpcmRender()
 
     if (ch->mute) return 0;
 
-	// Return the centered value (Range 0-127 -> -64 a 63)
-	return (Int32)ch->dacout - 64;
+    // NES APU mixer expects unipolar (0-127); no signed offset—delta non-linearity in TND table.
+	return (Int32)ch->dacout; // 0-127 unipolar (clamped 2-125 during delta steps).
     #undef ch
 }
 
@@ -916,7 +1051,7 @@ void APUSoundWrite(Uint address, Uint value)
 	}
 }
 
-// Needs review
+// Needs review (i don't know what this actually does)
 void __fastcall APU4015Reg()
 {
 	static int oldkey = 0;
@@ -955,60 +1090,45 @@ void __fastcall APU4015Reg()
 static void NESAPUSoundSquareReset(NESAPU_SQUARE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_SQUARE));
-		if(getApuCurrentRegion() == PAL)
-	{
-		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
-	}
-	else
-	{
-		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
-	}
+	NesAPUSoundSquareHWStop();
+	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
+
 static void NESAPUSoundTriangleReset(NESAPU_TRIANGLE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_TRIANGLE));
-	if(getApuCurrentRegion() == PAL)
-	{
-		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
-	}
-	else
-	{
-		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
-	}
+	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 static void NESAPUSoundNoiseReset(NESAPU_NOISE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_NOISE));
-	ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
+	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 	ch->rng = 1;
 }
 
 static void NESAPUSoundDpcmReset(NESAPU_DPCM *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_DPCM));
-	if(getApuCurrentRegion() == PAL)
-	{
-		ch->cps = GetFixedPointStep((NES_BASECYCLES << 1), 13 * (NESAudioFrequencyGet() << 1), CPS_SHIFT);
-		ch->pcm_ptr = 0; // TODO:Render RAW PCM properly
-	}
-	else
-	{
-		ch->cps = GetFixedPointStep(NES_BASECYCLES, 12 * NESAudioFrequencyGet(), CPS_SHIFT);
-		ch->pcm_ptr = 0; // TODO:Render RAW PCM properly
-	}
+	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->pcm_ptr = 0;
 }
 
 static void __fastcall APUSoundReset(void)
 {
+	int cpu_clock = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
 	Uint i;
 	NESAPUSoundSquareReset(&apu.square[0]);
 	NESAPUSoundSquareReset(&apu.square[1]);
 	NESAPUSoundTriangleReset(&apu.triangle);
 	NESAPUSoundNoiseReset(&apu.noise);
 	NESAPUSoundDpcmReset(&apu.dpcm);
-	apu.cpf[1] = GetFixedPointStep(NES_BASECYCLES, 12 * 240, CPS_SHIFT);
-	apu.cpf[2] = GetFixedPointStep(NES_BASECYCLES, 12 * 240 * 4 / 5, CPS_SHIFT);
+	apu.cpf[1] = GetFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 : 240, CPS_SHIFT);
+	apu.cpf[2] = GetFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 * 4 / 5 : 240 * 4 / 5, CPS_SHIFT);
 	apu.cpf[0] = apu.cpf[1];
 	apu.square[1].sw.ch = 1;
 	apu.square[0].cpf = &apu.cpf[0];

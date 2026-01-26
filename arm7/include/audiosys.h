@@ -9,12 +9,14 @@
 extern "C" {
 #endif
 
-#define NES_BASECYCLES 21477272
+#define NES_CPU_NTSC 1789773
+#define NES_CPU_PAL  1662607
+
 
 /* 31 - log2(NES_BASECYCLES/(12*MIN_FREQ)) > CPS_BITS  */
 /* MIN_FREQ:11025 23.6 > CPS_BITS */
 /* 32-12(max spd) > CPS_BITS */
-#define CPS_SHIFT 16
+#define CPS_SHIFT 18
 
 typedef void (__fastcall *AUDIOHANDLER2)(Int32 *p);
 typedef Int32 (__fastcall *AUDIOHANDLER)(void);
@@ -33,10 +35,16 @@ enum ApuRegion
 	NTSC
 };
 
-enum ApuStatus
+enum ApuCycles
 {
 	Reverse,
 	Normal
+};
+
+enum PulseMode
+{
+    PULSE_CH_SW,
+    PULSE_CH_HW
 };
 
 void APU_VBlank_Sync();
@@ -48,7 +56,7 @@ Uint NESAudioFrequencyGet(void);
 extern void (*FDSSoundWriteHandler)(Uint address, Uint value);
 void FDSSoundInstall(void);
 enum ApuRegion getApuCurrentRegion();
-enum ApuStatus getApuCurrentStatus();
+enum ApuCycles getApuCurrentStatus();
 Uint32 GetFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
 
 #ifdef __cplusplus

@@ -8,10 +8,70 @@
 #include "s_defs.h"
 #include "s_vrc6.h"
 
-s16 buffer [MIXBUFSIZE * 20]; // Sound Samples Buffer Size, adjust size if necessary
+// Information sources:
+// - https://www.nesdev.org/wiki/APU_Mixer
+// - https://problemkaputt.de/gbatek.htm#dssound
+// - https://stackoverflow.com/questions/14997850/fir-filter-implementation-in-c-programming
 
-// Set Flag for the APU settings to match PAL Sound Frequency
-enum ApuRegion ApuCurrentRegion = NTSC;
+// NES APU Mixer Lookup Tables
+// Pulse table: For sum of two pulse channels (0-30 unipolar levels).
+// Derived from: 95.52 / (8128.0 / n + 100) for n=1..30, scaled to 0-32767 (Q15 unipolar).
+const int16_t pulse_table[31] =
+{
+    0, 380, 752, 1114, 1468, 1814, 2152, 2482, 2805, 3120,
+    3429, 3731, 4027, 4316, 4599, 4876, 5148, 5414, 5675, 5930,
+    6181, 6426, 6667, 6903, 7135, 7363, 7586, 7805, 8020, 8231,
+    8438
+};
+
+// TND table: For weighted sum of triangle/noise/DMC (0-202 unipolar equivalent levels).
+// Approximated from: 163.67 / (24329.0 / n + 100) for n=1..202, scaled to 0-32767.
+// Weights (3*tri + 2*noi + dmc)
+const int16_t tnd_table[203] =
+{
+    0, 220, 437, 653, 867, 1080, 1291, 1500, 1707, 1913,
+    2117, 2320, 2521, 2720, 2918, 3115, 3309, 3503, 3695, 3885,
+    4074, 4261, 4448, 4632, 4816, 4997, 5178, 5357, 5535, 5712,
+    5887, 6061, 6234, 6406, 6576, 6745, 6913, 7080, 7245, 7409,
+    7573, 7735, 7895, 8055, 8214, 8371, 8528, 8683, 8838, 8991,
+    9143, 9294, 9444, 9593, 9742, 9889, 10035, 10180, 10324, 10467,
+    10610, 10751, 10892, 11031, 11170, 11308, 11444, 11580, 11715, 11850,
+    11983, 12116, 12247, 12378, 12508, 12637, 12766, 12893, 13020, 13146,
+    13271, 13396, 13519, 13642, 13765, 13886, 14007, 14127, 14246, 14364,
+    14482, 14599, 14716, 14831, 14946, 15061, 15175, 15288, 15400, 15512,
+    15623, 15733, 15843, 15952, 16060, 16168, 16275, 16382, 16488, 16594,
+    16698, 16803, 16906, 17009, 17112, 17214, 17315, 17416, 17516, 17616,
+    17715, 17814, 17912, 18009, 18106, 18203, 18299, 18394, 18489, 18583,
+    18677, 18771, 18863, 18956, 19048, 19139, 19230, 19321, 19411, 19500,
+    19589, 19678, 19766, 19853, 19941, 20027, 20114, 20200, 20285, 20370,
+    20455, 20539, 20623, 20706, 20789, 20871, 20953, 21035, 21116, 21197,
+    21277, 21357, 21437, 21516, 21595, 21674, 21752, 21829, 21907, 21984,
+    22060, 22136, 22212, 22288, 22363, 22438, 22512, 22586, 22660, 22733,
+    22806, 22879, 22951, 23023, 23095, 23166, 23237, 23307, 23378, 23448,
+    23517, 23587, 23656, 23724, 23793, 23861, 23929, 23996, 24063, 24130,
+    24197, 24263, 24329
+};
+
+s16 buffer [MIXBUFSIZE * 2];
+
+enum ApuRegion ApuCurrentRegion = NTSC; // Set Flag for the APU settings to match PAL Sound Frequency
+enum ApuCycles ApuCurrentStatus = Normal; // SWAP DUTY CYCLES
+enum PulseMode CurrentPulseMode = PULSE_CH_SW; // Change pulse 1/2 renderer
+
+void SetPulseModeSW() 
+{
+    CurrentPulseMode = PULSE_CH_SW;
+}
+
+void SetPulseModeHW() 
+{
+    CurrentPulseMode = PULSE_CH_HW;
+}
+
+enum PulseMode GetPulseMode() 
+{
+    return CurrentPulseMode;
+}
 
 void SetApuPAL()
 {
@@ -28,9 +88,6 @@ enum ApuRegion getApuCurrentRegion()
 	return ApuCurrentRegion;
 }
 
-// SWAP CYCLES
-enum ApuStatus ApuCurrentStatus = Normal;
-
 void SetApuSwap()
 {
 	ApuCurrentStatus = Reverse;
@@ -41,20 +98,30 @@ void SetApuNormal()
 	ApuCurrentStatus = Normal;
 }
 
-enum ApuStatus getApuCurrentStatus()
+enum ApuCycles getApuCurrentStatus()
 {
 	return ApuCurrentStatus;
 }
 
-void readAPU(void);
-void resetAPU(void);
-
-// Resets thge APU emulation to avoid garbage sounds
+// Resets the APU emulation to avoid garbage sounds
 void resetAPU() 
 {
 	NESReset();
 	IPC_APUW = 0;
 	IPC_APUR = 0;
+}
+
+int pcmpos = 0;
+int APU_paused = 0;
+
+// Simple clamp for saturation (prevents overflow in DS mixer).
+static inline int16_t clampSamples16(int32_t val) 
+{
+    return (val > MAX_S16) 
+		? MAX_S16 
+		: ((val < MIN_S16) 
+			? MIN_S16 
+			: (int16_t)val);
 }
 
 static int chan = 0;
@@ -64,40 +131,92 @@ int PCM_8 = SOUND_FORMAT_8BIT;
 int PCM16 = SOUND_FORMAT_16BIT;
 int ADPCM = SOUND_FORMAT_ADPCM;
 
-int P1_VL = SOUND_VOL(0x7F); // VOL 0x5F
-int P1_PN = SOUND_PAN(0x42); // PAN 0X20
+#define U7_MIN   0x00
+#define U7_MAX   0x7F    // 127
 
-// Pulse 2
-int P2_VL = SOUND_VOL(0x7F); // VOL 0x5F
-int P2_PN = SOUND_PAN(0x3D); // PAN 0X60
+#define U7_PCT(pct)   (((pct) * U7_MAX + 50) / 100)
 
-// Triangle
-int TR_VL = SOUND_VOL(0x7F); // VOL 0x7F
-int TR_PN = SOUND_PAN(0x40); // PAN 0X20
+#define U7_0_PCT     U7_PCT(0)     // 0
+#define U7_25_PCT    U7_PCT(25)    // 32
+#define U7_50_PCT    U7_PCT(50)    // 64
+#define U7_75_PCT    U7_PCT(75)    // 95
+#define U7_100_PCT   U7_PCT(100)   // 127
 
-// Noise
-int NS_VL = SOUND_VOL(0x7F); // VOL 0x7A
-int NS_PN = SOUND_PAN(0x40); // PAN 0X45
+//RIGHT
+int P1_VL = SOUND_VOL(U7_MAX);
+int P1_PN = SOUND_PAN(U7_50_PCT); // PAN 0X20
 
-// DMC
-int DM_VL = SOUND_VOL(0x7F); // VOL 0x6F
-int DM_PN = SOUND_PAN(0x40); // PAN 0x40
+// LEFT
+// int F1_VL = SOUND_VOL(U7_100_PCT); // VOL 0x7F
+// int F1_PN = SOUND_PAN(U7_75_PCT); // PAN 0X40
 
-// FDS
-int F1_VL = SOUND_VOL(0x7F); // VOL 0x7F
-int F1_PN = SOUND_PAN(0x40); // PAN 0X40
+// This emulates the NES APU mixer (NESDev wiki: APU Mixer).
+void __fastcall mix(int chan)
+{
+    if (APU_paused) return;
+    s16 *pcmBuffer = &buffer[chan * MIXBUFSIZE];
+    const int mapper = IPC_MAPPER;
+    const bool vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
 
-// VRC6 Square 1
-int V1_VL = SOUND_VOL(0x7F); // VOL 0x3C
-int V1_PN = SOUND_PAN(0x45); // PAN 0x54
+    for (int i = 0; i < MIXBUFSIZE; i++) 
+    {
+		int32_t pulse = 0;
+        if (CurrentPulseMode == PULSE_CH_SW)
+		{
+            pulse = pulse_table[NESAPUSoundSquareRender1() + NESAPUSoundSquareRender2()];
+        }
+        int32_t tnd   = tnd_table[(3 * NESAPUSoundTriangleRender1()) + 
+                                  (2 * NESAPUSoundNoiseRender1()) + 
+                                  NESAPUSoundDpcmRender1()];
 
-// VRC6 Square 2
-int V2_VL = SOUND_VOL(0x7F); // VOL 0x3C
-int V2_PN = SOUND_PAN(0x3B); // PAN 0x54
+        int32_t s_apu = (pulse + tnd) - DC_OFFSET;
 
-// VRC6 Saw
-int V3_VL = SOUND_VOL(0x7F); // VOL 0x3C
-int V3_PN = SOUND_PAN(0x3F); // PAN 0x54
+        if (vrc6) 
+		{
+            s_apu += (VRC6SoundRenderSquare1() + 
+                      VRC6SoundRenderSquare2() + 
+                      (VRC6SoundRenderSaw())) << 8;
+        }
+
+		int32_t mixed = s_apu << GAIN;
+		clampSamples16(mixed);
+        *pcmBuffer++ = (int16_t)mixed;
+    }
+    if (CurrentPulseMode == PULSE_CH_HW)
+	{
+        NESAPUSoundSquareHWRender();
+    }
+	readAPU();
+    APU4015Reg();
+}
+
+void initsound()
+{
+	powerOn(BIT(0));
+	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(127);
+
+    u16 timerVal = TIMER_NFREQ; // 32768Hz
+
+	SCHANNEL_SOURCE(0) = (u32)&buffer[0];
+	//SCHANNEL_SOURCE(1) = (u32)&buffer[0];
+
+	SCHANNEL_TIMER(0) = timerVal;
+	//SCHANNEL_TIMER(1) = timerVal;
+
+	SCHANNEL_LENGTH(0) = MIXBUFSIZE;
+	//SCHANNEL_LENGTH(1) = MIXBUFSIZE;
+
+	SCHANNEL_REPEAT_POINT(0) = 0;
+	//SCHANNEL_REPEAT_POINT(1) = 0;
+
+	TIMER_DATA(0) = timerVal << 1;
+	TIMER_CR(0) = TIMER_ENABLE;
+
+	TIMER_DATA(1) = (u16)-MIXBUFSIZE;
+	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
+	memset(buffer, 0, sizeof(buffer));
+	NesAPUSoundSquareHWStop();
+}
 
 void restartsound(int ch)
 {
@@ -105,58 +224,16 @@ void restartsound(int ch)
 
 	SCHANNEL_CR(0) = ENBLD |
 					RPEAT |
-					//Pulse1_volume()|
 					P1_VL |
 					P1_PN |
 					PCM16 ;
 	
-	SCHANNEL_CR(1) = ENBLD |
-					RPEAT |
-					P2_VL |
-					P2_PN |
-					PCM16 ;
+	// SCHANNEL_CR(1) = ENBLD |
+	// 				RPEAT |
+	// 				F1_VL |
+	// 				F1_PN |
+	// 				PCM16 ;
 
-	SCHANNEL_CR(2) = ENBLD |
-					RPEAT |
-					TR_VL |
-					TR_PN |
-					PCM16 ;
-
-	SCHANNEL_CR(3) = ENBLD |
-					RPEAT |
-					NS_VL |
-					NS_PN |
-					PCM16 ;
-
-	SCHANNEL_CR(4) = ENBLD |
-					RPEAT |
-					DM_VL |
-					DM_PN |
-					PCM16 ;
-	
-	SCHANNEL_CR(5) = ENBLD |
-					RPEAT |
-					F1_VL |
-					F1_PN |
-					PCM16 ;
-
-	SCHANNEL_CR(6) = ENBLD |
-					RPEAT |
-					V1_VL |
-					V1_PN |
-					PCM16 ;
-	
-	SCHANNEL_CR(7) = ENBLD |
-					RPEAT |
-					V2_VL |
-					V2_PN |
-					PCM16 ;
-	
-	SCHANNEL_CR(8) = ENBLD |
-					RPEAT |
-					V3_VL |
-					V3_PN |
-					PCM16 ;
 
 //TODO: Channel 9-11 reserved to mix Konami VCR7 Audio ("Lagrange Point" is the only game that uses this.)
 //TODO: Channel 12-13 reserved to mix NAMCO N163 Audio (4 N163 channels per NDS channel)
@@ -168,161 +245,11 @@ void restartsound(int ch)
 void stopsound() 
 {
 	SCHANNEL_CR(0) = 0;
-	SCHANNEL_CR(1) = 0;
-	SCHANNEL_CR(2) = 0;
-	SCHANNEL_CR(3) = 0;
-	SCHANNEL_CR(4) = 0;
-	SCHANNEL_CR(5) = 0;
-	SCHANNEL_CR(6) = 0;
-	SCHANNEL_CR(7) = 0;
-	SCHANNEL_CR(8) = 0;
+	//SCHANNEL_CR(1) = 0;
+
 	TIMER_CR(1) = 0;
-	TIMER_CR(0) = 0;
-}
-
-int pcmpos = 0;
-int APU_paused = 0;
-
-// Mixer handler TODO: Implement cases for custom sound filters.
-void __fastcall mix(int chan)
-{
-    int mapper = IPC_MAPPER;
-
-    if (!APU_paused) 
-	{
-        int i;
-        s16 *pcmBuffer = &buffer[chan*MIXBUFSIZE];
-
-        for (i = 0; i < MIXBUFSIZE; i++)
-		{			
-			int32 output = NESAPUSoundSquareRender1() << 8;
-			*pcmBuffer++ = output;
-        }
-
-		pcmBuffer+=MIXBUFSIZE;
-  		for (i = 0; i < MIXBUFSIZE; i++)
- 		{
-            int32 output = NESAPUSoundSquareRender2() << 8;
-			*pcmBuffer++ = output;
-        }
-
-		pcmBuffer+=MIXBUFSIZE;
-        for (i = 0; i < MIXBUFSIZE; i++)
-		{
-            int32 output = NESAPUSoundTriangleRender1() << 9;
-			*pcmBuffer++ = output;
-        }
-
-		pcmBuffer+=MIXBUFSIZE;
-        for (i = 0; i < MIXBUFSIZE; i++) 
-		{
-            int32 output = NESAPUSoundNoiseRender1() << 9;
-			*pcmBuffer++ = output;
-        }
-
-		pcmBuffer+=MIXBUFSIZE;
-        for (i = 0; i < MIXBUFSIZE; i++) 
-		{
-            int32 output = NESAPUSoundDpcmRender1() << 8;
-			*pcmBuffer++ = output;
-        }
-
-		pcmBuffer+=MIXBUFSIZE;
-        if (mapper == 20 || mapper == 256)
-		{
-            for (i = 0; i < MIXBUFSIZE; i++) 
-			{
-                int32 output = FDSSoundRender() << 2;
-				*pcmBuffer++ = output;
-            }
-		} 
-		    else
-			{
-		    pcmBuffer+=MIXBUFSIZE;
-			}
-
-		//pcmBuffer+=MIXBUFSIZE;	
-        if (mapper == 24 || mapper == 26)
-		{
-			pcmBuffer+=MIXBUFSIZE;
-            for (i = 0; i < MIXBUFSIZE; i++)
-			{
-				int32 output = VRC6SoundRenderSquare1() << 9;
-				*pcmBuffer++ = output;
-            }
-
-			pcmBuffer+=MIXBUFSIZE;
-            for (i = 0; i < MIXBUFSIZE; i++) 
-			{
-				int32 output = VRC6SoundRenderSquare2() << 9;
-				*pcmBuffer++ = output;
-            }
-
-			pcmBuffer+=MIXBUFSIZE;
-            for (i = 0; i < MIXBUFSIZE; i++)
-			{
-				int32 output = VRC6SoundRenderSaw() << 9;
-				*pcmBuffer++ = output;
-            }
-        }
-    }
-    readAPU();
-    APU4015Reg(); // to refresh reg4015.
-}
-
-void initsound()
-{ 		
-	int i;
-	powerOn(BIT(0));
-	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(0x7F);
-	for(i = 0; i < 16; i++)
-	{
-		SCHANNEL_CR(i) = 0;
-	}
-
-	SCHANNEL_SOURCE(0) = (u32)&buffer[0];
-	SCHANNEL_SOURCE(1) = (u32)&buffer[2*MIXBUFSIZE];
-	SCHANNEL_SOURCE(2) = (u32)&buffer[4*MIXBUFSIZE];
-	SCHANNEL_SOURCE(3) = (u32)&buffer[6*MIXBUFSIZE];
-	SCHANNEL_SOURCE(4) = (u32)&buffer[8*MIXBUFSIZE];
-	SCHANNEL_SOURCE(5) = (u32)&buffer[10*MIXBUFSIZE];
-	SCHANNEL_SOURCE(6) = (u32)&buffer[12*MIXBUFSIZE];
-	SCHANNEL_SOURCE(7) = (u32)&buffer[14*MIXBUFSIZE];
-	SCHANNEL_SOURCE(8) = (u32)&buffer[16*MIXBUFSIZE];
-
-	SCHANNEL_TIMER(0) = TIMER_NFREQ;
-	SCHANNEL_TIMER(1) = TIMER_NFREQ;
-	SCHANNEL_TIMER(2) = TIMER_NFREQ;
-	SCHANNEL_TIMER(3) = TIMER_NFREQ;
-	SCHANNEL_TIMER(4) = TIMER_NFREQ;
-	SCHANNEL_TIMER(5) = TIMER_NFREQ;
-	SCHANNEL_TIMER(6) = TIMER_NFREQ;
-	SCHANNEL_TIMER(7) = TIMER_NFREQ;
-	SCHANNEL_TIMER(8) = TIMER_NFREQ;
-
-	SCHANNEL_LENGTH(0) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(1) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(2) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(3) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(4) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(5) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(6) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(7) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(8) = MIXBUFSIZE;
-
-	SCHANNEL_REPEAT_POINT(0) = 0;
-	SCHANNEL_REPEAT_POINT(1) = 0;
-	SCHANNEL_REPEAT_POINT(2) = 0;
-	SCHANNEL_REPEAT_POINT(3) = 0;
-	SCHANNEL_REPEAT_POINT(4) = 0;
-	SCHANNEL_REPEAT_POINT(5) = 0;
-	SCHANNEL_REPEAT_POINT(6) = 0;
-	SCHANNEL_REPEAT_POINT(7) = 0;
-	SCHANNEL_REPEAT_POINT(8) = 0;
-
-	TIMER_DATA(0) = TIMER_NFREQ << 1;
-	TIMER_DATA(1) = 0x10000 - MIXBUFSIZE;
-	memset(buffer, 0, sizeof(buffer));
+	//TIMER_CR(0) = 0;
+	NesAPUSoundSquareHWStop();
 }
 
 // Stops sound, restarts sound, reset apu, refreshes 4015 reg, clears buffer
@@ -354,12 +281,14 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 		case FIFO_APU_PAUSE:
 			APU_paused=1;
 			memset(buffer,0,sizeof(buffer));
+			NesAPUSoundSquareHWStop();
 			break;
 		case FIFO_UNPAUSE:
 			APU_paused=0;
 			break;
 		case FIFO_APU_RESET:
 			memset(buffer,0,sizeof(buffer));
+			NesAPUSoundSquareHWStop();
 			APU_paused=0;
 			resetAPU();
 			APU4015Reg();
@@ -368,6 +297,7 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 		case FIFO_SOUND_RESET:
 			lidinterrupt();
 			memset(buffer,0,sizeof(buffer));
+			NesAPUSoundSquareHWStop();
 			break;
 		case FIFO_APU_PAL:
 			SetApuPAL();
@@ -393,7 +323,13 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 			resetAPU();
 			readAPU();
 			APU4015Reg();
-			break; 	
+			break;
+		case FIFO_APU_PULSE_SW:
+            SetPulseModeSW();
+            break;
+        case FIFO_APU_PULSE_HW:
+            SetPulseModeHW();
+            break;	
 	}
 }
 
@@ -411,7 +347,7 @@ void readAPU()
 		unsigned int *src = IPC_APUWRITE;
 		unsigned int end = IPC_APUW;
 		unsigned int start = IPC_APUR;
-		while(start < end) 
+		while(start < end)
 		{
 			unsigned int val = src[start&(1024 - 1)];
 			APUSoundWrite(val >> 8, val & 0xFF);
@@ -430,23 +366,17 @@ void interrupthandler()
 
 void nesmain() 
 {
-	//NESAudioFrequencySet(MIXFREQ);
-	//NESTerminate();
-	//NESHandlerInitialize();
-	//NESAudioHandlerInitialize();
-	
-	// Change func name to "DPCMSoundInstall();"
 	APUSoundInstall();
 	FDSSoundInstall();
 	VRC6SoundInstall();
 	
 	resetAPU();
 
-	swiWaitForVBlank();
 	initsound();
 	restartsound(1);
 
 	fifoSetValue32Handler(FIFO_USER_08, fifointerrupt, 0);		//use the last IPC channel to comm..
-	irqSet(IRQ_TIMER1, soundinterrupt);
 	irqSet(IRQ_LID, lidinterrupt);
+	irqSet(IRQ_TIMER1, soundinterrupt);
+	swiWaitForVBlank();
 }

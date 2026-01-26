@@ -7,7 +7,7 @@
 #include "s_fds.h"
 
 #define FDS_DYNAMIC_BIAS 1
-
+#define NES_BASECYCLES (21477270) // legacy, will fix this later
 
 #define FM_DEPTH 1 /* 0,1,2 */
 #define PGCPS_BITS (32-16-6)
