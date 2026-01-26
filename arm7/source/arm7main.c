@@ -143,14 +143,14 @@ int ADPCM = SOUND_FORMAT_ADPCM;
 #define U7_100_PCT   U7_PCT(100)   // 127
 
 //RIGHT
-int P1_VL = SOUND_VOL(U7_MAX);
-int P1_PN = SOUND_PAN(U7_50_PCT); // PAN 0X20
-
+int R_VOL = SOUND_VOL(U7_75_PCT);
+int R_PAN = SOUND_PAN(U7_0_PCT);
 // LEFT
-// int F1_VL = SOUND_VOL(U7_100_PCT); // VOL 0x7F
-// int F1_PN = SOUND_PAN(U7_75_PCT); // PAN 0X40
+int L_VOL = SOUND_VOL(U7_75_PCT);
+int L_PAN = SOUND_PAN(U7_100_PCT);
 
 // This emulates the NES APU mixer (NESDev wiki: APU Mixer).
+// It converts unipolar NES levels to bipolar DS PCM16 samples.
 void __fastcall mix(int chan)
 {
     if (APU_paused) return;
@@ -161,16 +161,22 @@ void __fastcall mix(int chan)
     for (int i = 0; i < MIXBUFSIZE; i++) 
     {
 		int32_t pulse = 0;
+		// Pulse channels: Render via SW table or skip if using DS PSG Hardware
         if (CurrentPulseMode == PULSE_CH_SW)
 		{
             pulse = pulse_table[NESAPUSoundSquareRender1() + NESAPUSoundSquareRender2()];
         }
+		// TND: Weighted sum of Triangle, Noise, and DMC (always Software)
         int32_t tnd   = tnd_table[(3 * NESAPUSoundTriangleRender1()) + 
                                   (2 * NESAPUSoundNoiseRender1()) + 
                                   NESAPUSoundDpcmRender1()];
 
+		// Convert unipolar (0 to 32767) to bipolar (-16384 to 16383)
+        // This centers the waveform to prevent DC bias artifacts in the DS mixer.
         int32_t s_apu = (pulse + tnd) - DC_OFFSET;
 
+		// VRC6 Expansion: Added post-offset. 
+        // Note: << 8 is a temporary gain factor until non-polar mixing is implemented.
         if (vrc6) 
 		{
             s_apu += (VRC6SoundRenderSquare1() + 
@@ -178,14 +184,17 @@ void __fastcall mix(int chan)
                       (VRC6SoundRenderSaw())) << 8;
         }
 
+		// Apply final gain and clamp to 16-bit range (-32768 to 32767)
 		int32_t mixed = s_apu << GAIN;
 		clampSamples16(mixed);
         *pcmBuffer++ = (int16_t)mixed;
     }
+	// Process Hardware PSG updates if enabled
     if (CurrentPulseMode == PULSE_CH_HW)
 	{
         NESAPUSoundSquareHWRender();
     }
+	// Sync APU logic and registers
 	readAPU();
     APU4015Reg();
 }
@@ -198,16 +207,16 @@ void initsound()
     u16 timerVal = TIMER_NFREQ; // 32768Hz
 
 	SCHANNEL_SOURCE(0) = (u32)&buffer[0];
-	//SCHANNEL_SOURCE(1) = (u32)&buffer[0];
+	SCHANNEL_SOURCE(1) = (u32)&buffer[0];
 
 	SCHANNEL_TIMER(0) = timerVal;
-	//SCHANNEL_TIMER(1) = timerVal;
+	SCHANNEL_TIMER(1) = timerVal;
 
 	SCHANNEL_LENGTH(0) = MIXBUFSIZE;
-	//SCHANNEL_LENGTH(1) = MIXBUFSIZE;
+	SCHANNEL_LENGTH(1) = MIXBUFSIZE;
 
 	SCHANNEL_REPEAT_POINT(0) = 0;
-	//SCHANNEL_REPEAT_POINT(1) = 0;
+	SCHANNEL_REPEAT_POINT(1) = 0;
 
 	TIMER_DATA(0) = timerVal << 1;
 	TIMER_CR(0) = TIMER_ENABLE;
@@ -224,15 +233,15 @@ void restartsound(int ch)
 
 	SCHANNEL_CR(0) = ENBLD |
 					RPEAT |
-					P1_VL |
-					P1_PN |
+					R_VOL |
+					R_PAN |
 					PCM16 ;
 	
-	// SCHANNEL_CR(1) = ENBLD |
-	// 				RPEAT |
-	// 				F1_VL |
-	// 				F1_PN |
-	// 				PCM16 ;
+	SCHANNEL_CR(1) = ENBLD |
+					RPEAT |
+					L_VOL |
+					L_PAN |
+					PCM16 ;
 
 
 //TODO: Channel 9-11 reserved to mix Konami VCR7 Audio ("Lagrange Point" is the only game that uses this.)
@@ -245,10 +254,10 @@ void restartsound(int ch)
 void stopsound() 
 {
 	SCHANNEL_CR(0) = 0;
-	//SCHANNEL_CR(1) = 0;
+	SCHANNEL_CR(1) = 0;
 
 	TIMER_CR(1) = 0;
-	//TIMER_CR(0) = 0;
+	TIMER_CR(0) = 0;
 	NesAPUSoundSquareHWStop();
 }
 
