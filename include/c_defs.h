@@ -9,7 +9,7 @@
 //#define DTCM 0x0b000000
 
 #define MAX_IPS_SIZE 0x80000		//actually, the ips file won't be larger than 512kB.
-#define ROM_MAX_SIZE 0x2b0000		//2,7MB free rom space
+#define ROM_MAX_SIZE 0x280000		//2,5MB free rom space
 #define MAXFILES 1024
 
 #define VRAM_ABCD (*(vu32*)0x4000240)
@@ -148,11 +148,11 @@ bool readFrontend(char *target);
 //misc.c
 #define MAX_SC 19
 
-extern char *ishortcuts[];
-extern char *igestures[];
-extern char *hshortcuts[];
+extern const char *ishortcuts[];
+extern const char *igestures[];
+extern const char *hshortcuts[];
 extern int shortcuts_tbl[];
-extern char *keystrs[];
+extern const char *keystrs[];
 extern char gestures_tbl[][32];
 extern int do_gesture_type;
 void do_quickf(int func);
@@ -162,12 +162,12 @@ extern int screen_swap;
 extern bool use_saves_dir;
 typedef struct {
 	int offset;
-	char *str;
+	const char *str;
 } touchstring;
 void do_shortcuts();
 extern int touchstate, last_x, last_y;
 void touch_update(void);
-int do_touchstrings(touchstring*,int pushstate);
+int do_touchstrings(touchstring *ts,int pushstate);
 void load_sram(void);
 void save_sram(void);
 void write_savestate(int num);
