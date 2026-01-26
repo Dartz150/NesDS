@@ -284,9 +284,10 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
     ch->fc += ch->cps;
     while (ch->fc >= *(ch->cpf))
     {
-		ch->fc -= *(ch->cpf);
 		// A real NES updates at 60, 120 y 240Hz respectively
-		if (!(ch->fp & 3))
+		ch->fc -= *(ch->cpf);
+		//LenghtCounterStep should be called twice per frame, not once
+		if (ch->fp & 1)
 		{
 			LengthCounterStep(&ch->lc);	  // 60Hz
 		}
@@ -347,7 +348,8 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 	while (ch->fc >= *(ch->cpf))
 	{
 		ch->fc -= *(ch->cpf);
-		if (!(ch->fp & 3)) 
+		//Lenght Counter should be called twice per frame, not once
+		if (ch->fp & 1) 
 		{
 			LengthCounterStep(&ch->lc);	// 60Hz
 		}
@@ -405,7 +407,8 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 	while (ch->fc >= *(ch->cpf))
 	{
 		ch->fc -= *(ch->cpf);
-		if (!(ch->fp & 3))
+		//LenghtCounterStep should be called twice per frame, not once
+		if (ch->fp & 1)
 		{
 			LengthCounterStep(&ch->lc);	/* 60Hz */
 		}
