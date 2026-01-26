@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include "c_defs.h"
+#include "SoundIPC.h"
 #include "menu.h"
 #include "NesMachine.h"
 
@@ -28,18 +29,62 @@ void reg4015interrupt(u32 msg, void *none)
 			addr: no known
 * description:		none
 ******************************/
-void writeAPU(u32 val,u32 addr) 
+void writeAPU(u32 val, u32 addr) 
 {
-	if (IPC_APUW - IPC_APUR < 256 && addr != 0x4011 &&
-			((addr > 0x8000 && (globals.mapperNr == 24 || globals.mapperNr == 26)) ||
-			(addr < 0x4018 || globals.mapperNr == 20))) {
-		fifoSendValue32(FIFO_USER_07,(addr << 8) | val);
-		IPC_APUW++;
-	}
-	if (addr == 0x4011) {
+	// We can't process this data directly since we would need to sync the ARM7 and the
+	// ARM9 very tightly, which is costly. We use this clever hack instead.
+	if (addr == 0x4011) 
+	{
+        // Instead of sending through the same FIFO channel or wait,
+		// We note the value in the time history of the current frame.
+        // __scanline is our timestamp.
 		unsigned char *out = IPC_PCMDATA;
-		out[__scanline] = val | 0x80;
-		*(IPC_APUWRITE + (addr & 0xFF)) = 0x100 | val;
+        out[__scanline] = val | 0x80;
+    } 
+	else
+	{
+		if (IPC_APUW - IPC_APUR < 256 && addr != 0x4011) 
+		{
+			bool send = false;
+
+			// VRC6 sound addresses data check (mapper 24 and 26).
+			if ((0x9000 <= addr && addr <= 0x9002) || (0xA000 <= addr && addr <= 0xA002) || (0xB000 <= addr && addr <= 0xB002)) 
+			{
+				if (debuginfo[MAPPER] == 24 || debuginfo[MAPPER] == 26 || (nsfHeader.ExtraChipSelect & VRC6_AUDIO || debuginfo[MAPPER] == 256)) 
+				{
+					send = true;
+				}
+			}
+
+			// FDS sound addresses data check (mapper 20).
+			if (0x4040 <= addr && addr < 0x4090) 
+			{
+				if (debuginfo[MAPPER] == 20 || (nsfHeader.ExtraChipSelect & FDS_AUDIO || debuginfo[MAPPER] == 256))
+				{
+					send = true;
+				}
+			}
+
+			// VRC7 sound addresses data check (add appropriate address range).
+			// if ((VRC7_ADDRESS_RANGE) && (nsfHeader.ExtraChipSelect & VRC7_AUDIO)) {
+			//     send = true;
+			// }
+
+			// Add similar checks for other sound chips like MMC5, Namco 163, Sunsoft 5B, VT02+...
+
+			// Standard APU sound addresses data check.
+			if (addr < 0x4018) 
+			{
+				send = true;
+			}
+
+			if (send) 
+			{
+				fifoSendValue32(FIFO_USER_07, (addr << 8) | val);
+				IPC_APUW++;
+				IPC_APUWRITE;
+			}
+		}
 	}
 }
 
@@ -49,11 +94,23 @@ void writeAPU(u32 val,u32 addr)
 * argument:		none
 * description:		none
 ******************************/
-void Sound_reset() {
+void Sound_reset() 
+{
 	fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
 }
 
-int last_x, last_y;	// most recently touched coords
+void SoundUpdate()
+{
+	fifoSendValue32(FIFO_USER_08, FIFO_SOUND_UPDATE);
+}
+
+void soundHardReset()
+{
+    fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
+    fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
+}
+
+int last_x, last_y;	//most recently touched coords
 int touchstate = 1;	// <2=pen up, 2=first touch, 3=pen down, 4=pen released
 
 /*****************************
@@ -242,7 +299,7 @@ void write_savestate(int num) {
 * argument:		num-> slots number
 * description:		none
 ******************************/
-void read_savestate(int num) {
+u32 read_savestate(u32 num) {
 	FILE *f;
 	int i;
 	u8 *p = (u8*)freemem_start;
