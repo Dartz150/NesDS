@@ -52,7 +52,7 @@ static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
 {
     // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
-	if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80)) 
+	if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80))
 	{
 		return 0;
 	}
@@ -61,8 +61,15 @@ static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
     while (ch->cycles < 0)
     {
         ch->cycles += ch->spd;
-        ch->output += (ch->regs[0] & 0x3F); // 6bit Accum
-        if (7 == ++ch->adr) // VRC6 Saw has 7 steps
+        // Increment phase (0..13)
+        ch->adr++;
+        // Accumulator increments only on even phases
+        if ((ch->adr & 1) == 0)
+        {
+            ch->output += (ch->regs[0] & 0x3F);
+        }
+        // Reset after 14 phases
+        if (ch->adr == 14)
         {
             ch->adr = 0;
             ch->output = 0;
