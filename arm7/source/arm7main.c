@@ -103,12 +103,20 @@ enum ApuCycles getApuCurrentStatus()
 	return ApuCurrentStatus;
 }
 
+// Expansion flags
+static bool has_vrc6 = false;
+static bool has_fds  = false;
+
 // Resets the APU emulation to avoid garbage sounds
 void resetAPU() 
 {
 	NESReset();
 	IPC_APUW = 0;
 	IPC_APUR = 0;
+	// Only detect expansions once per reset
+    const int mapper = IPC_MAPPER;
+    has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
+    has_fds  = (mapper == 20 || mapper == 256);
 }
 
 int pcmpos = 0;
@@ -155,8 +163,6 @@ void __fastcall mix(int chan)
 {
     if (APU_paused) return;
     s16 *pcmBuffer = &buffer[chan * MIXBUFSIZE];
-    const int mapper = IPC_MAPPER;
-    const bool vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
 
     for (int i = 0; i < MIXBUFSIZE; i++) 
     {
@@ -174,9 +180,14 @@ void __fastcall mix(int chan)
         int32_t s_apu = (pulse + tnd);
 
 		// VRC6 Expansion:
-        if (vrc6) 
+        if (has_vrc6) 
 		{
             s_apu += VRC6SoundRender();
+        }
+		if (has_fds)
+        {
+			// TODO: Mix fds properly
+            s_apu += FDSSoundRender();
         }
 		// Convert unipolar (0 to 32767) to bipolar (-16384 to 16383)
         // This centers the waveform to prevent artifacts in the DS mixer.
@@ -306,26 +317,21 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 			break;
 		case FIFO_APU_PAL:
 			SetApuPAL();
-			resetAPU();
 			readAPU();
 			break;
 		case FIFO_APU_NTSC:
 			SetApuNTSC();
-			resetAPU();
 			readAPU();
 			break;
 		case FIFO_APU_SWAP:
 			SetApuSwap();
-			resetAPU();
 			readAPU();
 			break;
 		case FIFO_APU_NORM:
 			SetApuNormal();
-			resetAPU();
 			readAPU();
 			break;
 		case FIFO_SOUND_UPDATE:
-			resetAPU();
 			readAPU();
 			APU4015Reg();
 			break;
