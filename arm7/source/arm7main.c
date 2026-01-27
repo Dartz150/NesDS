@@ -8,6 +8,25 @@
 #include "s_defs.h"
 #include "s_vrc6.h"
 
+#define MIXBUFSIZE    (1 << 8)
+/*
+ * DS Hardware Constants (from No$gba DS Sound docs: Channel/Mixer Bit-Widths section)
+ * DS expects signed 16-bit PCM (SOUNDxCNT Format=1: PCM16, range -32768 to +32767).
+ * We center post-mixer to bipolar for full dynamic range.
+ */
+#define DC_OFFSET     16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
+#define MAX_S16       32767  // 7FFFh: DS PCM16 max.
+#define MIN_S16      -32768  // -8000h: DS PCM16 min.
+
+//RIGHT CHANNEL
+#define RIGHT_CHANNEL 0
+#define R_VOL         SOUND_VOL(127)
+#define R_PAN         SOUND_PAN(0)
+// LEFT CHANNEL
+#define LEFT_CHANNEL  1
+#define L_VOL         SOUND_VOL(127)
+#define L_PAN         SOUND_PAN(127)
+
 // Information sources:
 // - https://www.nesdev.org/wiki/APU_Mixer
 // - https://problemkaputt.de/gbatek.htm#dssound
@@ -16,7 +35,7 @@
 // NES APU Mixer Lookup Tables
 // Pulse table: For sum of two pulse channels (0-30 unipolar levels).
 // Derived from: 95.52 / (8128.0 / n + 100) for n=1..30, scaled to 0-32767 (Q15 unipolar).
-const int16_t pulse_table[31] =
+static const int16_t pulse_table[31] =
 {
     0, 380, 752, 1114, 1468, 1814, 2152, 2482, 2805, 3120,
     3429, 3731, 4027, 4316, 4599, 4876, 5148, 5414, 5675, 5930,
@@ -27,7 +46,7 @@ const int16_t pulse_table[31] =
 // TND table: For weighted sum of triangle/noise/DMC (0-202 unipolar equivalent levels).
 // Approximated from: 163.67 / (24329.0 / n + 100) for n=1..202, scaled to 0-32767.
 // Weights (3*tri + 2*noi + dmc)
-const int16_t tnd_table[203] =
+static const int16_t tnd_table[203] =
 {
     0, 220, 437, 653, 867, 1080, 1291, 1500, 1707, 1913,
     2117, 2320, 2521, 2720, 2918, 3115, 3309, 3503, 3695, 3885,
@@ -52,11 +71,19 @@ const int16_t tnd_table[203] =
     24197, 24263, 24329
 };
 
-s16 buffer [MIXBUFSIZE * 2];
+static s16 buffer [MIXBUFSIZE * 2];
 
+// APU mixer status flags (TODO: Move to audiosys.c)
 enum ApuRegion ApuCurrentRegion = NTSC; // Set Flag for the APU settings to match PAL Sound Frequency
 enum ApuCycles ApuCurrentStatus = Normal; // SWAP DUTY CYCLES
 enum PulseMode CurrentPulseMode = PULSE_CH_SW; // Change pulse 1/2 renderer
+
+// Sound Expansion flags
+static bool has_vrc6 = false;
+static bool has_fds  = false;
+// Sound status flags
+static int APU_paused = 0;
+static int chan = 0;
 
 void SetPulseModeSW() 
 {
@@ -103,10 +130,6 @@ enum ApuCycles getApuCurrentStatus()
 	return ApuCurrentStatus;
 }
 
-// Expansion flags
-static bool has_vrc6 = false;
-static bool has_fds  = false;
-
 // Resets the APU emulation to avoid garbage sounds
 void resetAPU() 
 {
@@ -119,9 +142,6 @@ void resetAPU()
     has_fds  = (mapper == 20 || mapper == 256);
 }
 
-int pcmpos = 0;
-int APU_paused = 0;
-
 // Simple clamp for saturation (prevents overflow in DS mixer).
 static inline int16_t clampSamples16(int32_t val) 
 {
@@ -131,31 +151,6 @@ static inline int16_t clampSamples16(int32_t val)
 			? MIN_S16 
 			: (int16_t)val);
 }
-
-static int chan = 0;
-int ENBLD = SCHANNEL_ENABLE;
-int RPEAT = SOUND_REPEAT;
-int PCM_8 = SOUND_FORMAT_8BIT;
-int PCM16 = SOUND_FORMAT_16BIT;
-int ADPCM = SOUND_FORMAT_ADPCM;
-
-#define U7_MIN   0x00
-#define U7_MAX   0x7F    // 127
-
-#define U7_PCT(pct)   (((pct) * U7_MAX + 50) / 100)
-
-#define U7_0_PCT     U7_PCT(0)     // 0
-#define U7_25_PCT    U7_PCT(25)    // 32
-#define U7_50_PCT    U7_PCT(50)    // 64
-#define U7_75_PCT    U7_PCT(75)    // 95
-#define U7_100_PCT   U7_PCT(100)   // 127
-
-//RIGHT
-int R_VOL = SOUND_VOL(U7_100_PCT);
-int R_PAN = SOUND_PAN(U7_0_PCT);
-// LEFT
-int L_VOL = SOUND_VOL(U7_100_PCT);
-int L_PAN = SOUND_PAN(U7_100_PCT);
 
 // This emulates the NES APU mixer (NESDev wiki: APU Mixer).
 // It converts unipolar NES levels to bipolar DS PCM16 samples.
@@ -179,8 +174,8 @@ void __fastcall mix(int chan)
 		// Mix 2A03 APU			  
         int32_t s_apu = (pulse + tnd);
 
-		// VRC6 Expansion:
-        if (has_vrc6) 
+		// Sound Expansion sound
+        if (has_vrc6)
 		{
             s_apu += VRC6SoundRender();
         }
@@ -213,17 +208,17 @@ void initsound()
 
     u16 timerVal = TIMER_NFREQ; // 32768Hz
 
-	SCHANNEL_SOURCE(0) = (u32)&buffer[0];
-	SCHANNEL_SOURCE(1) = (u32)&buffer[0];
+	SCHANNEL_SOURCE(RIGHT_CHANNEL) = (u32)&buffer[0];
+	SCHANNEL_SOURCE(LEFT_CHANNEL) = (u32)&buffer[0];
 
-	SCHANNEL_TIMER(0) = timerVal;
-	SCHANNEL_TIMER(1) = timerVal;
+	SCHANNEL_TIMER(RIGHT_CHANNEL) = timerVal;
+	SCHANNEL_TIMER(LEFT_CHANNEL) = timerVal;
 
-	SCHANNEL_LENGTH(0) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(1) = MIXBUFSIZE;
+	SCHANNEL_LENGTH(RIGHT_CHANNEL) = MIXBUFSIZE;
+	SCHANNEL_LENGTH(LEFT_CHANNEL) = MIXBUFSIZE;
 
-	SCHANNEL_REPEAT_POINT(0) = 0;
-	SCHANNEL_REPEAT_POINT(1) = 0;
+	SCHANNEL_REPEAT_POINT(RIGHT_CHANNEL) = 0;
+	SCHANNEL_REPEAT_POINT(LEFT_CHANNEL) = 0;
 
 	TIMER_DATA(0) = timerVal << 1;
 	TIMER_CR(0) = TIMER_ENABLE;
@@ -238,22 +233,18 @@ void restartsound(int ch)
 {
 	chan = ch;
 
-	SCHANNEL_CR(0) = ENBLD |
-					RPEAT |
-					R_VOL |
-					R_PAN |
-					PCM16 ;
-	
-	SCHANNEL_CR(1) = ENBLD |
-					RPEAT |
-					L_VOL |
-					L_PAN |
-					PCM16 ;
-
-
-//TODO: Channel 9-11 reserved to mix Konami VCR7 Audio ("Lagrange Point" is the only game that uses this.)
-//TODO: Channel 12-13 reserved to mix NAMCO N163 Audio (4 N163 channels per NDS channel)
-
+	SCHANNEL_CR(RIGHT_CHANNEL) =
+		SCHANNEL_ENABLE |
+		SOUND_REPEAT |
+		R_VOL |
+		R_PAN |
+		SOUND_FORMAT_16BIT;
+	SCHANNEL_CR(LEFT_CHANNEL) =
+		SCHANNEL_ENABLE |
+		SOUND_REPEAT |
+		L_VOL |
+		L_PAN |
+		SOUND_FORMAT_16BIT;
 	TIMER_CR(0) = TIMER_ENABLE; 
 	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
 }

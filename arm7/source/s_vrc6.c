@@ -1,7 +1,42 @@
+#include <string.h>
+#include "nestypes.h"
+#include "audiosys.h"
+#include "handler.h"
+#include "c_defs.h"
 #include "s_vrc6.h"
 
 // (:::) VRC6 AUDIO ENGINE (:::) //
-// Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio
+// Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio and previous code by "huiminghao".
+
+typedef struct
+{
+    Uint32 cps;
+    Int32 cycles;
+    Uint32 spd;
+    Uint8 regs[3];
+    Uint8 adr;
+    Uint8 mute;
+} VRC6_SQUARE;
+
+typedef struct
+{
+    Uint32 cps;
+    Int32 cycles;
+    Uint32 spd;
+    Uint32 output;
+    Uint8 regs[3];
+    Uint8 adr;
+    Uint8 mute;
+} VRC6_SAW;
+
+typedef struct
+{
+    VRC6_SQUARE square[2];
+    VRC6_SAW saw;
+    Uint32 mastervolume;
+    Uint8 p_high; // Pulse Line High.
+    Uint8 p_low;  // Pulse Line Low.
+} VRC6SOUND;
 
 #define VRC6_MIX_FACTOR 380 //  23,180 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 380
 static VRC6SOUND vrc6s;
@@ -10,18 +45,12 @@ static VRC6SOUND vrc6s;
 /// registers will need adjustment ($x001 will become $x002 and vice versa). 
 static void VRC6SoundSetPulseLineRegs()
 {
-	if (IPC_MAPPER == 24)
-	{
-		// 悪魔城伝説 (Akumajou Densetsu, iNES mapper 024)
-        vrc6s.p_high = 2;
-        vrc6s.p_low = 1;
-    }
-	else
-	{
-		// For Madara and Esper Dream 2 and some VRC6 romhacks (iNES mapper 026)
-        vrc6s.p_high = 1;
-        vrc6s.p_low = 2;
-    }
+	int is_vrc6_24 = (IPC_MAPPER == 24);
+    // 悪魔城伝説 (Akumajou Densetsu, iNES mapper 024)
+    vrc6s.p_high = is_vrc6_24 ? 2 : 1;
+
+    // For Madara,  Esper Dream 2 and some VRC6 romhacks (iNES mapper 026)
+    vrc6s.p_low  = is_vrc6_24 ? 1 : 2;
 }
 
 static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch)

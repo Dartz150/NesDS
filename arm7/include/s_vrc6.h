@@ -1,52 +1,12 @@
-#ifndef S_VRC6_H__
-#define S_VRC6_H__
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include <string.h>
-#include "nestypes.h"
-#include "audiosys.h"
-#include "handler.h"
-#include "nsf6502.h"
-#include "nsdout.h"
-#include "c_defs.h"
-
-typedef struct 
-{
-    Uint32 cps;
-    Int32 cycles;
-    Uint32 spd;
-    Uint8 regs[3];
-    Uint8 adr;
-    Uint8 mute;
-} VRC6_SQUARE;
-
-typedef struct 
-{
-    Uint32 cps;
-    Int32 cycles;
-    Uint32 spd;
-    Uint32 output;
-    Uint8 regs[3];
-    Uint8 adr;
-    Uint8 mute;
-} VRC6_SAW;
-
-typedef struct 
-{
-    VRC6_SQUARE square[2];
-    VRC6_SAW saw;
-    Uint32 mastervolume;
-    Uint8 p_high; // Pulse Line High.
-    Uint8 p_low;  // Pulse Line Low.
-} VRC6SOUND;
-
-void VRC6SoundReset(void);
-
-// VRC6 Init
+// VRC6 Sound handlers
 void VRC6SoundInstall(void);
+void VRC6SoundReset(void);
 int32_t VRC6SoundRender();
 
 // VRC6 Write regs
@@ -57,5 +17,3 @@ void VRC6SoundWriteB000(Uint address, Uint value);
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* S_VRC6_H__ */
