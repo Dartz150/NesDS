@@ -8,6 +8,8 @@
 // (:::) VRC6 AUDIO ENGINE (:::) //
 // Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio and previous code by "huiminghao".
 
+#define VRC6_MIX_FACTOR 380 //  23,180 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 380
+
 typedef struct
 {
     Uint32 cps;
@@ -38,7 +40,6 @@ typedef struct
     Uint8 p_low;  // Pulse Line Low.
 } VRC6SOUND;
 
-#define VRC6_MIX_FACTOR 380 //  23,180 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 380
 static VRC6SOUND vrc6s;
 
 /// @brief On some boards (Mapper 26), the A0 and A1 lines were switched, so for those, 

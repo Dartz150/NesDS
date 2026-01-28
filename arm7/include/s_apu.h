@@ -7,6 +7,7 @@ extern "C" {
 
 void APUSoundInstall(void);
 void APU4015Reg(void);
+void APUSoundWrite(Uint address, Uint value);
 
 #ifdef __cplusplus
 }

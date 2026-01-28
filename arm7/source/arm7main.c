@@ -251,8 +251,8 @@ void restartsound(int ch)
 
 void stopsound() 
 {
-	SCHANNEL_CR(0) = 0;
-	SCHANNEL_CR(1) = 0;
+	SCHANNEL_CR(RIGHT_CHANNEL) = 0;
+	SCHANNEL_CR(LEFT_CHANNEL) = 0;
 
 	TIMER_CR(1) = 0;
 	TIMER_CR(0) = 0;
@@ -278,8 +278,6 @@ void soundinterrupt(void)
 	}
 
 }
-
-void APUSoundWrite(Uint address, Uint value);	//from s_apu.c (skip using read handlers, just write it directly)
 
 void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo channel.
 {
@@ -369,8 +367,8 @@ void interrupthandler()
 void nesmain() 
 {
 	APUSoundInstall();
-	FDSSoundInstall();
 	VRC6SoundInstall();
+	FDSSoundInstall();
 	
 	resetAPU();
 

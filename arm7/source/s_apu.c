@@ -24,7 +24,6 @@
 
 /*/ Lenght Counter /*/
 // Provides automatic duration control for the NES APU waveform channels ($4015 ~ $400F)
-static int apuirq = 0;
 
 typedef struct 
 {
@@ -155,6 +154,7 @@ typedef struct
 } APUSOUND __attribute__((aligned(32)));
 
 static APUSOUND apu;
+static int apuirq = 0;
 
 // Square Duty LUT
 static const Uint8 square_duty_table[4] = 
