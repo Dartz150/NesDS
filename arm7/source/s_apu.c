@@ -8,6 +8,7 @@
 #include "s_apu.h"
 #include "c_defs.h"
 #include "s_vrc6.h"
+#include "s_fds.h"
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
@@ -1011,7 +1012,7 @@ void APUSoundWrite(Uint address, Uint value)
 	// FDS (FAMICOM DISK SYSTEM ADDITIONAL CHANNEL) TODO: REFACTOR WITH CASES
 	else if (FDS_BASE <= address && address < FDS_END && (mapper == 20 || mapper == 256)) 
 	{
-		FDSSoundWriteHandler(address, value);
+		FDSSoundWrite(address, value);
 	}
 	// VRC6 (KONAMI SOUND CHIP)
 	else if (address >= VRC6_MIN_BASE)

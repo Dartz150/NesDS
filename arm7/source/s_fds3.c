@@ -6,24 +6,30 @@
 #include "nsdout.h"
 #include "s_fds.h"
 
+// (:::) FDS AUDIO ENGINE (:::) //
+// Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/FDS_audio and previous code by "huiminghao".
+
 /* DS Mixer Compatibility Constants */
 #define FDS_MIX_FACTOR 1 // Keep it like this to avoid sound overflows
 #define FM_DEPTH 1
 #define PGCPS_BITS (32 - 16 - 6)
 #define EGCPS_BITS (12)
 
-typedef struct {
+typedef struct
+{
 	Uint8 spd;
 	Uint8 cnt;
 	Uint8 mode;
 	Uint8 volume;
 } FDS_EG;
-typedef struct {
+typedef struct
+{
 	Uint32 spdbase;
 	Uint32 spd;
 	Uint32 freq;
 } FDS_PG;
-typedef struct {
+typedef struct
+{
 	Uint32 phase;
 	Int8 wave[0x40];
 	Uint8 wavptr;
@@ -31,7 +37,8 @@ typedef struct {
 	Uint8 disable;
 	Uint8 disable2;
 } FDS_WG;
-typedef struct {
+typedef struct
+{
 	FDS_EG eg;
 	FDS_PG pg;
 	FDS_WG wg;
@@ -40,7 +47,8 @@ typedef struct {
 	Uint8 d[2];
 } FDS_OP;
 
-typedef struct FDSSOUND_tag {
+typedef struct FDSSOUND_tag
+{
 	FDS_OP op[2];
 	Uint32 phasecps;
 	Uint32 envcnt;
@@ -151,13 +159,14 @@ Int32 __fastcall FDSSoundRender(void) {
     return (fdssound.op[0].pg.freq != 0) ? ((final_out * 3 ) >> FDS_MIX_FACTOR) : 0;
 }
 
+// Wavetable RAM ($4040-$407F)
 static const Uint8 wave_delta_table[8] = {
 	0,(1 << FM_DEPTH),(2 << FM_DEPTH),(4 << FM_DEPTH),
 	0,256 - (4 << FM_DEPTH),256 - (2 << FM_DEPTH),256 - (1 << FM_DEPTH),
 };
 
 // Called in s_apu.c
-static void __fastcall FDSSoundWrite(Uint address, Uint value)
+void __fastcall FDSSoundWrite(Uint address, Uint value)
 {
     if (0x4040 <= address && address <= 0x407F)
 	{
@@ -250,7 +259,8 @@ static void __fastcall FDSSoundWrite(Uint address, Uint value)
     }
 }
 
-static void __fastcall FDSSoundReseter(FDSSOUND *ch) {
+static void __fastcall FDSSoundReseter(FDSSOUND *ch) 
+{
     XMEMSET(&fdssound, 0, sizeof(FDSSOUND));
     uint32_t sample_rate = NESAudioFrequencyGet();
     uint32_t cpu_clock = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
@@ -283,6 +293,5 @@ static NES_RESET_HANDLER s_fds_reset_handler[] =
 
 extern void FDSSoundInstall(void)
 {
-	FDSSoundWriteHandler = FDSSoundWrite;
 	NESResetHandlerInstall(s_fds_reset_handler);
 }

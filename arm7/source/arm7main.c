@@ -5,8 +5,10 @@
 #include "SoundIPC.h"
 #include "audiosys.h"
 #include "handler.h"
+#include "s_apu.h"
 #include "s_defs.h"
 #include "s_vrc6.h"
+#include "s_fds.h"
 
 #define MIXBUFSIZE    (1 << 8)
 /*
@@ -174,14 +176,13 @@ void __fastcall mix(int chan)
 		// Mix 2A03 APU			  
         int32_t s_apu = (pulse + tnd);
 
-		// Sound Expansion sound
+		// Sound Expansions
         if (has_vrc6)
 		{
             s_apu += VRC6SoundRender();
         }
 		if (has_fds)
         {
-			// TODO: Mix fds properly
             s_apu += FDSSoundRender();
         }
 		// Convert unipolar (0 to 32767) to bipolar (-16384 to 16383)
