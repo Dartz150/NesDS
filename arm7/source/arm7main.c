@@ -10,24 +10,25 @@
 #include "s_vrc6.h"
 #include "s_fds.h"
 
-#define MIXBUFSIZE    (1 << 8)
+#define MIXBUFSIZE        (1 << 8)
+#define STEREO_DELAY_SIZE 256 // 15ms @ 32kHz
 /*
  * DS Hardware Constants (from No$gba DS Sound docs: Channel/Mixer Bit-Widths section)
  * DS expects signed 16-bit PCM (SOUNDxCNT Format=1: PCM16, range -32768 to +32767).
  * We center post-mixer to bipolar for full dynamic range.
  */
-#define DC_OFFSET     16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
-#define MAX_S16       32767  // 7FFFh: DS PCM16 max.
-#define MIN_S16      -32768  // -8000h: DS PCM16 min.
+#define DC_OFFSET         16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
+#define MAX_S16           32767  // 7FFFh: DS PCM16 max.
+#define MIN_S16          -32768  // -8000h: DS PCM16 min.
 
 //RIGHT CHANNEL
-#define RIGHT_CHANNEL 0
-#define R_VOL         SOUND_VOL(127)
-#define R_PAN         SOUND_PAN(0)
+#define RIGHT_CHANNEL     0
+#define R_VOL             SOUND_VOL(127)
+#define R_PAN             SOUND_PAN(0)
 // LEFT CHANNEL
-#define LEFT_CHANNEL  1
-#define L_VOL         SOUND_VOL(127)
-#define L_PAN         SOUND_PAN(127)
+#define LEFT_CHANNEL      1
+#define L_VOL             SOUND_VOL(127)
+#define L_PAN             SOUND_PAN(127)
 
 // Information sources:
 // - https://www.nesdev.org/wiki/APU_Mixer
@@ -73,7 +74,10 @@ static const int16_t tnd_table[203] =
     24197, 24263, 24329
 };
 
-static s16 buffer [MIXBUFSIZE * 2];
+// DS Mixer buffers
+static s16 buffer_L[MIXBUFSIZE * 2];
+static s16 buffer_R[MIXBUFSIZE * 2];
+static int16_t delay_line[STEREO_DELAY_SIZE];
 
 // APU mixer status flags (TODO: Move to audiosys.c)
 enum ApuRegion ApuCurrentRegion = NTSC; // Set Flag for the APU settings to match PAL Sound Frequency
@@ -83,7 +87,10 @@ enum PulseMode CurrentPulseMode = PULSE_CH_SW; // Change pulse 1/2 renderer
 // Sound Expansion flags
 static bool has_vrc6 = false;
 static bool has_fds  = false;
+
 // Sound status flags
+static bool stereo_enhanced = true;
+static int delay_ptr = 0;
 static int APU_paused = 0;
 static int chan = 0;
 
@@ -156,10 +163,11 @@ static inline int16_t clampSamples16(int32_t val)
 
 // This emulates the NES APU mixer (NESDev wiki: APU Mixer).
 // It converts unipolar NES levels to bipolar DS PCM16 samples.
-void __fastcall mix(int chan)
+void __fastcall nesApuMixer(int chan)
 {
     if (APU_paused) return;
-    s16 *pcmBuffer = &buffer[chan * MIXBUFSIZE];
+    s16 *pcmL = &buffer_L[chan * MIXBUFSIZE];
+    s16 *pcmR = &buffer_R[chan * MIXBUFSIZE];
 
     for (int i = 0; i < MIXBUFSIZE; i++) 
     {
@@ -173,7 +181,7 @@ void __fastcall mix(int chan)
         int32_t tnd   = tnd_table[(3 * NESAPUSoundTriangleRender1()) + 
                                   (2 * NESAPUSoundNoiseRender1()) + 
                                   NESAPUSoundDpcmRender1()];
-		// Mix 2A03 APU			  
+		// Mix 2A03 APU
         int32_t s_apu = (pulse + tnd);
 
 		// Sound Expansions
@@ -189,8 +197,35 @@ void __fastcall mix(int chan)
         // This centers the waveform to prevent artifacts in the DS mixer.
 		int32_t mixed = ((s_apu - DC_OFFSET) * 3) >> 1; // Apply final linear gain (1.5x factor is the sweet spot).
 		// Clamp to 16-bit range (-32768 to 32767)
-		clampSamples16(mixed);
-        *pcmBuffer++ = (int16_t)mixed;
+		clampSamples16((int16_t)mixed);
+        int16_t end_buffer = (int16_t)mixed;
+
+		// Sound post-processing
+		if (stereo_enhanced)
+		{
+            // R Channel: Original Sample
+            *pcmR++ = end_buffer;
+
+            // Obtain delayed sample for L
+            int16_t delayed_sample = delay_line[delay_ptr];
+            
+            // Store our current sample in the delay line (with some feedback for reverb)
+            // For simple feedback: current + (previous * 0.3)
+            int32_t feedback = delayed_sample >> 2; // 25% feedback
+			delay_line[delay_ptr] = clampSamples16(end_buffer + feedback);
+            delay_ptr = (delay_ptr + 1) % STEREO_DELAY_SIZE;
+
+            // Mix to L channelL: Original + Delayed
+            // This creates a phase difference the brain translates as 3D audio
+            int32_t left_mix = (end_buffer - (delayed_sample >> 1)); // 50% vol
+            *pcmL++ = clampSamples16(left_mix);
+        }
+        else
+		{
+            // Normal mono sound
+            *pcmL++ = end_buffer;
+            *pcmR++ = end_buffer;
+		}
     }
 	// Process Hardware PSG updates if enabled
     if (CurrentPulseMode == PULSE_CH_HW)
@@ -209,8 +244,8 @@ void initsound()
 
     u16 timerVal = TIMER_NFREQ; // 32768Hz
 
-	SCHANNEL_SOURCE(RIGHT_CHANNEL) = (u32)&buffer[0];
-	SCHANNEL_SOURCE(LEFT_CHANNEL) = (u32)&buffer[0];
+	SCHANNEL_SOURCE(RIGHT_CHANNEL) = (u32)&buffer_R[0];
+	SCHANNEL_SOURCE(LEFT_CHANNEL) = (u32)&buffer_L[0];
 
 	SCHANNEL_TIMER(RIGHT_CHANNEL) = timerVal;
 	SCHANNEL_TIMER(LEFT_CHANNEL) = timerVal;
@@ -226,7 +261,9 @@ void initsound()
 
 	TIMER_DATA(1) = (u16)-MIXBUFSIZE;
 	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
-	memset(buffer, 0, sizeof(buffer));
+	memset(delay_line, 0, sizeof(delay_line));
+    memset(buffer_L, 0, sizeof(buffer_L));
+    memset(buffer_R, 0, sizeof(buffer_R));
 	NesAPUSoundSquareHWStop();
 }
 
@@ -270,7 +307,7 @@ void lidinterrupt(void)
 void soundinterrupt(void)
 {
 	chan^=1;
-	mix(chan);
+	nesApuMixer(chan);
 	if(REG_IF & IRQ_TIMER1)
 	{
 		lidinterrupt();
@@ -286,14 +323,18 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 	{
 		case FIFO_APU_PAUSE:
 			APU_paused=1;
-			memset(buffer,0,sizeof(buffer));
+			memset(delay_line, 0, sizeof(delay_line));
+			memset(buffer_R,0,sizeof(buffer_R));
+			memset(buffer_L,0,sizeof(buffer_L));
 			NesAPUSoundSquareHWStop();
 			break;
 		case FIFO_UNPAUSE:
 			APU_paused=0;
 			break;
 		case FIFO_APU_RESET:
-			memset(buffer,0,sizeof(buffer));
+			memset(delay_line, 0, sizeof(delay_line));
+			memset(buffer_R,0,sizeof(buffer_R));
+			memset(buffer_L,0,sizeof(buffer_L));
 			NesAPUSoundSquareHWStop();
 			APU_paused=0;
 			resetAPU();
@@ -302,7 +343,9 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 			break;
 		case FIFO_SOUND_RESET:
 			lidinterrupt();
-			memset(buffer,0,sizeof(buffer));
+			memset(delay_line, 0, sizeof(delay_line));
+			memset(buffer_R,0,sizeof(buffer_R));
+			memset(buffer_L,0,sizeof(buffer_L));
 			NesAPUSoundSquareHWStop();
 			break;
 		case FIFO_APU_PAL:
