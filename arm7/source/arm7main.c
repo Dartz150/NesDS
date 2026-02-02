@@ -19,7 +19,7 @@
  */
 #define DC_OFFSET         16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
 
-//RIGHT CHANNEL
+// RIGHT CHANNEL
 #define RIGHT_CHANNEL     0
 #define R_VOL             SOUND_VOL(127)
 #define R_PAN             SOUND_PAN(0)
@@ -198,7 +198,7 @@ __inline static int16_t nesToDsSample(int32_t raw_sample)
 }
 
 // Applies sound post-processing
-__inline static void applySoundPostProcessing(int16_t sample, int16_t *outL, int16_t *outR) 
+__inline static void applySoundPostProcessing(int16_t sample, int16_t *outL, int16_t *outR, int *ptr) 
 {
     if (!stereo_enhanced) 
 	{
@@ -212,11 +212,12 @@ __inline static void applySoundPostProcessing(int16_t sample, int16_t *outL, int
     *outR = sample;
 
     // Obtain delayed sample for L
-    int16_t delayed = delay_line[delay_ptr];
+	int current_ptr = *ptr;
+    int16_t delayed = delay_line[current_ptr];
 
     // Store our current sample in the delay line
-    delay_line[delay_ptr] = sample;
-    delay_ptr = (delay_ptr + 1) % STEREO_DELAY_SIZE;
+    delay_line[current_ptr] = sample;
+    *ptr = (current_ptr + 1) % STEREO_DELAY_SIZE;
 
     // Phase inverted Channel L for a surround pseudo-stereo effect.
     int32_t left_mix = sample - (delayed >> 1); // 50% vol
@@ -229,6 +230,7 @@ void __fastcall soundMain(int chan)
 
     s16 *pcmL = &buffer_L[chan * MIXBUFSIZE];
     s16 *pcmR = &buffer_R[chan * MIXBUFSIZE];
+	int local_delay_ptr = delay_ptr;
 
     for (int i = 0; i < MIXBUFSIZE; i++) 
 	{
@@ -239,8 +241,9 @@ void __fastcall soundMain(int chan)
         int16_t ds_sample = nesToDsSample(nes_sample);
 
         // Apply post-processing effects and write to the audio buffers
-        applySoundPostProcessing(ds_sample, pcmL++, pcmR++);
+        applySoundPostProcessing(ds_sample, pcmL++, pcmR++, &local_delay_ptr);
     }
+	delay_ptr = local_delay_ptr;
 
     // Process Hardware PSG when enabled
     if (CurrentPulseMode == PULSE_CH_HW)
@@ -250,6 +253,14 @@ void __fastcall soundMain(int chan)
 	// Sync APU logic and registers
     readApu();
     APU4015Reg();
+}
+
+static void clearSoundBuffers(void)
+{
+    memset(delay_line, 0, sizeof(delay_line));
+    memset(buffer_L, 0, sizeof(buffer_L));
+    memset(buffer_R, 0, sizeof(buffer_R));
+    delay_ptr = 0;
 }
 
 void initsound()
@@ -271,45 +282,44 @@ void initsound()
 	SCHANNEL_REPEAT_POINT(RIGHT_CHANNEL) = 0;
 	SCHANNEL_REPEAT_POINT(LEFT_CHANNEL) = 0;
 
+	SCHANNEL_CR(RIGHT_CHANNEL) =
+		SOUND_REPEAT |
+		R_VOL |
+		R_PAN |
+		SOUND_FORMAT_16BIT;
+	SCHANNEL_CR(LEFT_CHANNEL) =
+		SOUND_REPEAT |
+		L_VOL |
+		L_PAN |
+		SOUND_FORMAT_16BIT;
+
 	TIMER_DATA(0) = timerVal << 1;
 	TIMER_CR(0) = TIMER_ENABLE;
 
 	TIMER_DATA(1) = (u16)-MIXBUFSIZE;
 	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
-	memset(delay_line, 0, sizeof(delay_line));
-    memset(buffer_L, 0, sizeof(buffer_L));
-    memset(buffer_R, 0, sizeof(buffer_R));
 	nesApuSoundPulseHwStop();
+}
+
+void stopsound()
+{
+	TIMER_CR(0) = 0;
+    TIMER_CR(1) = 0;
+	SCHANNEL_CR(RIGHT_CHANNEL) &= ~SCHANNEL_ENABLE;
+    SCHANNEL_CR(LEFT_CHANNEL)  &= ~SCHANNEL_ENABLE;
+    nesApuSoundPulseHwStop();
+	clearSoundBuffers();
 }
 
 void restartsound(int ch)
 {
 	chan = ch;
 
-	SCHANNEL_CR(RIGHT_CHANNEL) =
-		SCHANNEL_ENABLE |
-		SOUND_REPEAT |
-		R_VOL |
-		R_PAN |
-		SOUND_FORMAT_16BIT;
-	SCHANNEL_CR(LEFT_CHANNEL) =
-		SCHANNEL_ENABLE |
-		SOUND_REPEAT |
-		L_VOL |
-		L_PAN |
-		SOUND_FORMAT_16BIT;
+	SCHANNEL_CR(RIGHT_CHANNEL) |= SCHANNEL_ENABLE;
+    SCHANNEL_CR(LEFT_CHANNEL)  |= SCHANNEL_ENABLE;
+
 	TIMER_CR(0) = TIMER_ENABLE; 
 	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
-}
-
-void stopsound() 
-{
-	SCHANNEL_CR(RIGHT_CHANNEL) = 0;
-	SCHANNEL_CR(LEFT_CHANNEL) = 0;
-
-	TIMER_CR(1) = 0;
-	TIMER_CR(0) = 0;
-	nesApuSoundPulseHwStop();
 }
 
 // Stops sound, restarts sound, reset apu, refreshes 4015 reg, clears buffer
@@ -337,31 +347,23 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 	switch(msg&0xff) 
 	{
 		case FIFO_APU_PAUSE:
-			APU_paused=1;
-			memset(delay_line, 0, sizeof(delay_line));
-			memset(buffer_R,0,sizeof(buffer_R));
-			memset(buffer_L,0,sizeof(buffer_L));
+			APU_paused = 1;
+			clearSoundBuffers();
 			nesApuSoundPulseHwStop();
 			break;
 		case FIFO_UNPAUSE:
-			APU_paused=0;
+			APU_paused = 0;
 			break;
 		case FIFO_APU_RESET:
-			memset(delay_line, 0, sizeof(delay_line));
-			memset(buffer_R,0,sizeof(buffer_R));
-			memset(buffer_L,0,sizeof(buffer_L));
+			clearSoundBuffers();
 			nesApuSoundPulseHwStop();
-			APU_paused=0;
+			APU_paused = 0;
 			resetApu();
 			APU4015Reg();
 			readApu();
 			break;
 		case FIFO_SOUND_RESET:
 			lidinterrupt();
-			memset(delay_line, 0, sizeof(delay_line));
-			memset(buffer_R,0,sizeof(buffer_R));
-			memset(buffer_L,0,sizeof(buffer_L));
-			nesApuSoundPulseHwStop();
 			break;
 		case FIFO_APU_PAL:
 			setApuPal();
@@ -388,32 +390,26 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
             break;
         case FIFO_APU_PULSE_HW:
             setPulseModeHw();
-            break;	
+            break;
+		case FIFO_APU_STEREO_ON:
+			stereo_enhanced = true;
+			break;
+		case FIFO_APU_STEREO_OFF:
+			stereo_enhanced = false;
+			delay_ptr = 0;
+    break;
 	}
 }
 
 void readApu()
 {
-	u32 msg;
-	if(1) 
+	int max_cmds = 32; // Security limit
+    while(fifoCheckValue32(FIFO_USER_07) && max_cmds--) 
 	{
-		while((msg = fifoGetValue32(FIFO_USER_07)) != 0)
-			apuSoundWrite(msg >> 8, msg & 0xFF);
-		IPC_APUR = IPC_APUW;
-	}
-	else 
-	{
-		unsigned int *src = IPC_APUWRITE;
-		unsigned int end = IPC_APUW;
-		unsigned int start = IPC_APUR;
-		while(start < end)
-		{
-			unsigned int val = src[start&(1024 - 1)];
-			apuSoundWrite(val >> 8, val & 0xFF);
-			start++;
-		}
-		IPC_APUR = start;
-	}
+        u32 msg = fifoGetValue32(FIFO_USER_07);
+        apuSoundWrite(msg >> 8, msg & 0xFF);
+    }
+    IPC_APUR = IPC_APUW;
 }
 
 void interrupthandler() 
@@ -425,6 +421,7 @@ void interrupthandler()
 
 void nesmain() 
 {
+	clearSoundBuffers();
 	apuSoundInstall();
 	VRC6SoundInstall();
 	FDSSoundInstall();

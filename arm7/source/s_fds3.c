@@ -84,7 +84,8 @@ static void FDSSoundEGStep(FDS_EG *peg)
     }
 }
 
-Int32 __fastcall FDSSoundRender(void) {
+Int32 __fastcall FDSSoundRender(void) 
+{
     Int32 output;
        // This prevents short "click" sounds and keeps correct note duration.
     if (!fdssound.envdisable && fdssound.envspd) 

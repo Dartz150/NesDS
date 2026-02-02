@@ -259,7 +259,7 @@ void listrom(int line, int rom, int highlight) {
 
 void mixer_reset()
 {
-	fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
+	fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
 }
 
 /*****************************
