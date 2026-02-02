@@ -205,7 +205,7 @@ static const Uint32 dpcm_freq_table_pal[16] =
 	0x0B0, 0x094, 0x084, 0x076, 0x062, 0x04E, 0x042, 0x032
 };
 
-inline static void LengthCounterStep(LENGTHCOUNTER *lc)
+__inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 {
 	if (lc->counter && !lc->clock_disable) 
 	{
@@ -213,7 +213,7 @@ inline static void LengthCounterStep(LENGTHCOUNTER *lc)
 	}
 }
 
-inline static void LinearCounterStep(LINEARCOUNTER *li, Uint32 cps)
+__inline static void linearCounterStep(LINEARCOUNTER *li, Uint32 cps)
 {
 	li->fc += cps;
     while (li->fc >= li->cpf)
@@ -240,7 +240,7 @@ inline static void LinearCounterStep(LINEARCOUNTER *li, Uint32 cps)
     }
 }
 
-inline static void EnvelopeDecayStep(ENVELOPEDECAY *ed)
+__inline static void envelopeDecayStep(ENVELOPEDECAY *ed)
 {
     if (ed->start) {
         ed->start = 0;
@@ -260,7 +260,7 @@ inline static void EnvelopeDecayStep(ENVELOPEDECAY *ed)
     }
 }
 
-inline void SweepStep(SWEEP *sw, Uint32 *wl)
+__inline static void sweepStep(SWEEP *sw, Uint32 *wl)
 {
 	if (sw->active && sw->shifter && ++sw->timer > sw->rate)
 	{
@@ -280,31 +280,34 @@ inline void SweepStep(SWEEP *sw, Uint32 *wl)
 	}
 }
 
-static inline u16 nesToDsTimer(Uint32 nes_wl, bool is_pal) {
+__inline static u16 nesToDsTimer(Uint32 nes_wl, bool is_pal)
+{
     uint64_t bus_clock = DS_BUS_CLOCK / 2; // Sound hardware runs at half the DS Bus Clock
     uint64_t cpu_clock = is_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     
     // (bus_clock * nes_divisor) / (cpu_clock * psg_ds_steps)
     // (bus_clock * 16) / (cpu_clock * 8) -> (bus_clock * 2) / cpu_clock
-    
+
     uint32_t ratio = (bus_clock * 2 * (nes_wl + 1)) / cpu_clock;
-    
-    if (ratio >= 65535) 
+
+    if (ratio >= 65535)
 	{
 		return 0; // Frecuency too low
 	}
     return (u16)(65536 - ratio);
 }
 
-static u32 nesDutyToDs(u8 duty_value) {
+__inline static u32 nesDutyToDs(u8 duty_value)
+{
     // duty_values derived from square_duty_table[4]
-    switch(duty_value) {
+    switch(duty_value)
+	{
         case 0x02: // 2/16 steps = 12.5%
             return SOUNDCNT_DUTY_12_5;
         case 0x04: // 4/16 steps = 25%
-            return SOUNDCNT_DUTY_25_0;  
+            return SOUNDCNT_DUTY_25_0;
         case 0x08: // 8/16 steps = 50%
-            return SOUNDCNT_DUTY_50_0; 
+            return SOUNDCNT_DUTY_50_0;
         case 0x0C: // 12/16 steps = 75%
             return SOUNDCNT_DUTY_75_0;
         default:
@@ -325,23 +328,23 @@ static u32 nesDutyToDs(u8 duty_value) {
  * * While not a 1:1 mathematical match for the NES Frame Counter, this configuration provides 
  * the best fidelity on DS hardware.
  */
-static void NESAPUSoundSquareUpdateHW(NESAPU_SQUARE *ch, int ds_chan, int pan)
+static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, int ds_chan, int pan)
 {
 	// TIMING LOGIC ("Cadence" hack)
 	// Frame Counter and sequencer (Envelopes, Sweeps, Length)
 	if (ch->fp & 1)
 	{
-		LengthCounterStep(&ch->lc);       // 60Hz
+		lengthCounterStep(&ch->lc);       // 60Hz
 	}
 	// Sub-cycle loop to provide higher resolution for Envelopes and Sweeps
 	for (int i = 0; i < 2; i++)
 	{
 		if (!(ch->fp & 1))
 		{
-			SweepStep(&ch->sw, &ch->wl);  // ~120Hz
+			sweepStep(&ch->sw, &ch->wl);  // ~120Hz
 		}
 		
-		EnvelopeDecayStep(&ch->ed);      // ~240Hz
+		envelopeDecayStep(&ch->ed);      // ~240Hz
 		ch->fp++;
 	}
 
@@ -399,20 +402,20 @@ static void NESAPUSoundSquareUpdateHW(NESAPU_SQUARE *ch, int ds_chan, int pan)
 
 // PSG channel writes change the sound INSTANTLY. 
 // Always call this after the software sound renderers to avoid sound latency.
-void NESAPUSoundSquareHWRender()
+void nesApuSoundPulseHwRender()
 {
-        NESAPUSoundSquareUpdateHW(&apu.square[0], NES_APU_SQUARE_1_CH, SQUARE_PAN_1_CH);
-        NESAPUSoundSquareUpdateHW(&apu.square[1], NES_APU_SQUARE_2_CH, SQUARE_PAN_2_CH);
+        nesApuSoundPulseUpdateHw(&apu.square[0], NES_APU_SQUARE_1_CH, SQUARE_PAN_1_CH);
+        nesApuSoundPulseUpdateHw(&apu.square[1], NES_APU_SQUARE_2_CH, SQUARE_PAN_2_CH);
 }
 
-void NesAPUSoundSquareHWStop()
+void nesApuSoundPulseHwStop()
 {
     snd_stopChannel(NES_APU_SQUARE_1_CH);
     snd_stopChannel(NES_APU_SQUARE_2_CH);
 }
 
 // Software Pulse Renderer
-static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
+static Int32 nesApuSoundPulseRender(NESAPU_SQUARE *ch)
 {
 	Int32 output;
 	if (!ch->key || !ch->lc.counter)
@@ -428,13 +431,13 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
 		//LenghtCounterStep should be called twice per frame, not once
 		if (ch->fp & 1)
 		{
-			LengthCounterStep(&ch->lc);	  // 60Hz
+			lengthCounterStep(&ch->lc);	  // 60Hz
 		}
 		if (!(ch->fp & 1))
 		{
-			SweepStep(&ch->sw, &ch->wl);  // 120Hz 
+			sweepStep(&ch->sw, &ch->wl);  // 120Hz 
 		}
-		EnvelopeDecayStep(&ch->ed);       // 240Hz
+		envelopeDecayStep(&ch->ed);       // 240Hz
 		ch->fp++;
 	}
     // Verify NES hardware limits
@@ -468,20 +471,20 @@ static Int32 NESAPUSoundSquareRender(NESAPU_SQUARE *ch)
 	return (ch->st >= ch->duty) ? output : 0; // (NESDev: HIGH=vol, LOW=0).
 }
 
-Int32 NESAPUSoundSquareRender1()
+Int32 nesApuSoundPulseRender1()
 {
-	return NESAPUSoundSquareRender(&apu.square[0]);
+	return nesApuSoundPulseRender(&apu.square[0]);
 }
 
-Int32 NESAPUSoundSquareRender2()
+Int32 nesApuSoundPulseRender2()
 {
-	return NESAPUSoundSquareRender(&apu.square[1]);
+	return nesApuSoundPulseRender(&apu.square[1]);
 }
 
-static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
+static Int32 nesApuSoundTriangleRender(NESAPU_TRIANGLE *ch)
 {
 	// Update timers (Linear -> 240Hz, Length -> 60Hz)
-	LinearCounterStep(&ch->li, ch->cps); // 240Hz
+	linearCounterStep(&ch->li, ch->cps); // 240Hz
 	ch->fc += ch->cps;
 	while (ch->fc >= *(ch->cpf))
 	{
@@ -489,7 +492,7 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 		//Lenght Counter should be called twice per frame, not once
 		if (ch->fp & 1) 
 		{
-			LengthCounterStep(&ch->lc);	// 60Hz
+			lengthCounterStep(&ch->lc);	// 60Hz
 		}
 		ch->fp++;
 	}
@@ -533,12 +536,12 @@ static Int32 NESAPUSoundTriangleRender(NESAPU_TRIANGLE *ch)
 	return output; // 0-15 unipolar (e.g., 0=peak low, 15=peak high).
 }
 
-Int32 NESAPUSoundTriangleRender1()
+Int32 nesApuSoundTriangleRender1()
 {
-	return NESAPUSoundTriangleRender(&apu.triangle);
+	return nesApuSoundTriangleRender(&apu.triangle);
 }
 
-static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
+static Int32 nesApuSoundNoiseRender(NESAPU_NOISE *ch)
 {	
 	// Frame Counter and sequencer (Envelope, Length)
 	ch->fc += ch->cps;
@@ -548,9 +551,9 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
 		//LenghtCounterStep should be called twice per frame, not once
 		if (ch->fp & 1)
 		{
-			LengthCounterStep(&ch->lc);	/* 60Hz */
+			lengthCounterStep(&ch->lc);	/* 60Hz */
 		}
-		EnvelopeDecayStep(&ch->ed); 	/* 240Hz */
+		envelopeDecayStep(&ch->ed); 	/* 240Hz */
 		ch->fp++;
 	}
 	// Silence Logic
@@ -595,12 +598,12 @@ static Int32 NESAPUSoundNoiseRender(NESAPU_NOISE *ch)
     return (Int32)vol; // 0-15 unipolar (silence=0, full vol=15).
 }
 
-Int32 NESAPUSoundNoiseRender1()
+Int32 nesApuSoundNoiseRender1()
 {
-	return NESAPUSoundNoiseRender(&apu.noise);
+	return nesApuSoundNoiseRender(&apu.noise);
 }
 
-__inline static void NESAPUSoundDpcmRead(NESAPU_DPCM *ch)
+__inline static void nesApuSoundDmcRead(NESAPU_DPCM *ch)
 {
     char ** memtbl = IPC_MEMTBL;
     
@@ -617,20 +620,20 @@ __inline static void NESAPUSoundDpcmRead(NESAPU_DPCM *ch)
     ch->adr++; 
 }
 
-static void NESAPUSoundDpcmStart(NESAPU_DPCM *ch)
+static void nesApuSoundDmcStart(NESAPU_DPCM *ch)
 {
 	ch->adr = 0xC000 | ((Uint16)ch->start_adr << 6);
     ch->length = ((Uint16)ch->start_length << 4) + 1; // Must be in bytes
     ch->bit_count = 0;
 	ch->irq_report = 0;
-	NESAPUSoundDpcmRead(ch);
+	nesApuSoundDmcRead(ch);
 }
 
 // DS side NES Frame Counter Increments on each generated sample.
 int raw_pcm_idx = 0;
 
 // Called in the main loop, we need it to be reset each DS frame
-void APU_VBlank_Sync()
+void apuVblankSync()
 {
     raw_pcm_idx = 0;
 }
@@ -653,7 +656,7 @@ void APU_VBlank_Sync()
  * frame-perfect, and emulates the NES DMC DAC behavior despite
  * differing clocks between ARM9 and ARM7.
  */
-inline static void NESAPUReplayDmcPcmWrites(NESAPU_DPCM *ch)
+inline static void nesApuReplayDmcPcmWrites(NESAPU_DPCM *ch)
 {
 	// RAW PCM samples must be rendered frame-perfect, hence this "async" method
 	// This emulates RAW PCM sample fetching in DS speeds.
@@ -678,12 +681,12 @@ inline static void NESAPUReplayDmcPcmWrites(NESAPU_DPCM *ch)
 	raw_pcm_idx++;
 }
 
-static Int32 __fastcall NESAPUSoundDpcmRender()
+static Int32 __fastcall nesApuSoundDmcRender()
 {
     #define ch (&apu.dpcm)
 
 	// --- SPECIAL DMC $4011 LOGIC ---
-	NESAPUReplayDmcPcmWrites(ch);
+	nesApuReplayDmcPcmWrites(ch);
 
     // --- STANDARD DMC LOGIC ---
     if (ch->key && ch->length > 0)
@@ -722,13 +725,13 @@ static Int32 __fastcall NESAPUSoundDpcmRender()
 				// Try to reload buffer from memory
                 if (ch->length > 0)
 				{
-                    NESAPUSoundDpcmRead(ch); // Reads the next byte from the IPC channel
+                    nesApuSoundDmcRead(ch); // Reads the next byte from the IPC channel
                     ch->length--; // Decrements remaining bytes
                     if (ch->length == 0)
 					{
                         if (ch->loop_enable)
 						{
-							NESAPUSoundDpcmStart(ch); // Resets
+							nesApuSoundDmcStart(ch); // Resets
 						}
                         else if (ch->irq_enable)
 						{
@@ -747,12 +750,12 @@ static Int32 __fastcall NESAPUSoundDpcmRender()
     #undef ch
 }
 
-Int32 NESAPUSoundDpcmRender1()
+Int32 nesApuSoundDmcRender1()
 {
-	return NESAPUSoundDpcmRender();
+	return nesApuSoundDmcRender();
 }
 
-void APUSoundWrite(Uint address, Uint value)
+void apuSoundWrite(Uint address, Uint value)
 {
 	int mapper = IPC_MAPPER;
 
@@ -778,7 +781,7 @@ void APUSoundWrite(Uint address, Uint value)
 				apu.square[ch].ed.looping_enable = (value & PULSE_ENV_LOOP) ? 1 : 0;
 				
 				// Load the Duty Cycle from the table
-				if (getApuCurrentStatus() == Reverse)
+				if (getPulseCurrentStatus() == Reverse)
 				{
 					apu.square[ch].duty = inverted_square_duty_table[value >> 6];
 				}
@@ -983,7 +986,7 @@ void APUSoundWrite(Uint address, Uint value)
 					if (!apu.dpcm.key || apu.dpcm.length == 0) // If not active or sample has ended
 					{
 						apu.dpcm.key = 1;
-						NESAPUSoundDpcmStart(&apu.dpcm); // Process DCM data
+						nesApuSoundDmcStart(&apu.dpcm); // Process DCM data
 					}
 				}
 				else
@@ -1088,48 +1091,48 @@ void __fastcall APU4015Reg()
 	}
 }
 
-static void NESAPUSoundSquareReset(NESAPU_SQUARE *ch)
+static void nesApuSoundPulseReset(NESAPU_SQUARE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_SQUARE));
-	NesAPUSoundSquareHWStop();
+	nesApuSoundPulseHwStop();
 	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
-static void NESAPUSoundTriangleReset(NESAPU_TRIANGLE *ch)
+static void nesApuSoundTriangleReset(NESAPU_TRIANGLE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_TRIANGLE));
 	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
-static void NESAPUSoundNoiseReset(NESAPU_NOISE *ch)
+static void nesApuSoundNoiseReset(NESAPU_NOISE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_NOISE));
 	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 	ch->rng = 1;
 }
 
-static void NESAPUSoundDpcmReset(NESAPU_DPCM *ch)
+static void nesApuSoundDmcReset(NESAPU_DPCM *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_DPCM));
 	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = GetFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 	ch->pcm_ptr = 0;
 }
 
-static void __fastcall APUSoundReset(void)
+static void __fastcall apuSoundReset(void)
 {
 	int cpu_clock = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
 	Uint i;
-	NESAPUSoundSquareReset(&apu.square[0]);
-	NESAPUSoundSquareReset(&apu.square[1]);
-	NESAPUSoundTriangleReset(&apu.triangle);
-	NESAPUSoundNoiseReset(&apu.noise);
-	NESAPUSoundDpcmReset(&apu.dpcm);
-	apu.cpf[1] = GetFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 : 240, CPS_SHIFT);
-	apu.cpf[2] = GetFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 * 4 / 5 : 240 * 4 / 5, CPS_SHIFT);
+	nesApuSoundPulseReset(&apu.square[0]);
+	nesApuSoundPulseReset(&apu.square[1]);
+	nesApuSoundTriangleReset(&apu.triangle);
+	nesApuSoundNoiseReset(&apu.noise);
+	nesApuSoundDmcReset(&apu.dpcm);
+	apu.cpf[1] = getFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 : 240, CPS_SHIFT);
+	apu.cpf[2] = getFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 * 4 / 5 : 240 * 4 / 5, CPS_SHIFT);
 	apu.cpf[0] = apu.cpf[1];
 	apu.square[1].sw.ch = 1;
 	apu.square[0].cpf = &apu.cpf[0];
@@ -1140,20 +1143,20 @@ static void __fastcall APUSoundReset(void)
 
 	for (i = 0; i <= 0x17; i++)
 	{
-		APUSoundWrite(0x4000 + i, (i == 0x10) ? 0x10 : 0x00);
+		apuSoundWrite(0x4000 + i, (i == 0x10) ? 0x10 : 0x00);
 	}
-	APUSoundWrite(0x4015, 0x0f);
+	apuSoundWrite(0x4015, 0x0f);
 #if 1
 	apu.dpcm.first = 1;
 #endif
 }
 
 static NES_RESET_HANDLER s_apu_reset_handler[] = {
-	{ NES_RESET_SYS_NOMAL, APUSoundReset, 0}, 
+	{ NES_RESET_SYS_NOMAL, apuSoundReset, 0},
 	{ 0,                   0, 0}
 };
 
-void APUSoundInstall(void)
+void apuSoundInstall(void)
 {
 	NESResetHandlerInstall(s_apu_reset_handler);
 }

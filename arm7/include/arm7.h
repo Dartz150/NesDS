@@ -16,8 +16,7 @@ extern void soundinterrupt(void);
 extern int pcmpos;
 extern int APU_paused;
 
-extern void readAPU(void);
-extern void resetAPU(void);
+extern void resetApu(void);
 
 #ifdef __cplusplus
 }

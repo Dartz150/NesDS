@@ -18,8 +18,6 @@
  * We center post-mixer to bipolar for full dynamic range.
  */
 #define DC_OFFSET         16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
-#define MAX_S16           32767  // 7FFFh: DS PCM16 max.
-#define MIN_S16          -32768  // -8000h: DS PCM16 min.
 
 //RIGHT CHANNEL
 #define RIGHT_CHANNEL     0
@@ -80,9 +78,9 @@ static s16 buffer_R[MIXBUFSIZE * 2] ALIGN(32);
 static int16_t delay_line[STEREO_DELAY_SIZE] ALIGN(32);
 
 // APU mixer status flags (TODO: Move to audiosys.c)
-enum ApuRegion ApuCurrentRegion = NTSC; // Set Flag for the APU settings to match PAL Sound Frequency
-enum ApuCycles ApuCurrentStatus = Normal; // SWAP DUTY CYCLES
-enum PulseMode CurrentPulseMode = PULSE_CH_SW; // Change pulse 1/2 renderer
+enum apuRegion apuCurrentRegion = NTSC; // Set Flag for the APU settings to match PAL Sound Frequency
+enum pulseCycles pulseCurrentStatus = Normal; // SWAP DUTY CYCLES
+enum pulseMode CurrentPulseMode = PULSE_CH_SW; // Change pulse 1/2 renderer
 
 // Sound Expansion flags
 static bool has_vrc6 = false;
@@ -94,53 +92,53 @@ static int delay_ptr = 0;
 static int APU_paused = 0;
 static int chan = 0;
 
-void SetPulseModeSW() 
+void setPulseModeSw()
 {
     CurrentPulseMode = PULSE_CH_SW;
 }
 
-void SetPulseModeHW() 
+void setPulseModeHw()
 {
     CurrentPulseMode = PULSE_CH_HW;
 }
 
-enum PulseMode GetPulseMode() 
+enum pulseMode getPulseMode()
 {
     return CurrentPulseMode;
 }
 
-void SetApuPAL()
+void setApuPal()
 {
-	ApuCurrentRegion = PAL;
+	apuCurrentRegion = PAL;
 }
 
-void SetApuNTSC()
+void setApuNtsc()
 {
-	ApuCurrentRegion = NTSC;
+	apuCurrentRegion = NTSC;
 }
 
-enum ApuRegion getApuCurrentRegion()
+enum apuRegion getApuCurrentRegion()
 {
-	return ApuCurrentRegion;
+	return apuCurrentRegion;
 }
 
-void SetApuSwap()
+void setPulseSwap()
 {
-	ApuCurrentStatus = Reverse;
+	pulseCurrentStatus = Reverse;
 }
 
-void SetApuNormal()
+void setPulseNormal()
 {
-	ApuCurrentStatus = Normal;
+	pulseCurrentStatus = Normal;
 }
 
-enum ApuCycles getApuCurrentStatus()
+enum pulseCycles getPulseCurrentStatus()
 {
-	return ApuCurrentStatus;
+	return pulseCurrentStatus;
 }
 
 // Resets the APU emulation to avoid garbage sounds
-void resetAPU() 
+void resetApu()
 {
 	NESReset();
 	IPC_APUW = 0;
@@ -151,89 +149,106 @@ void resetAPU()
     has_fds  = (mapper == 20 || mapper == 256);
 }
 
-// Simple clamp for saturation (prevents overflow in DS mixer).
-static inline int16_t clampSamples16(int32_t val) 
+// https://github.com/Gericom/GBARunner3/blob/develop/code/core/arm7/source/Sound/GbaSound7.c#L50
+// Clamps samples to a 16-bit range to prevent overflows in the DS mixer.
+__inline static int16_t clampSample16(int32_t inSample)
 {
-    return (val > MAX_S16) 
-		? MAX_S16 
-		: ((val < MIN_S16) 
-			? MIN_S16 
-			: (int16_t)val);
+    // For a 16 bit range (-32768 to 32767)
+    int32_t outSample = inSample << 16;
+    if (inSample != (outSample >> 16))
+        outSample = 0x7FFFFFFF ^ (inSample >> 31);
+    return (int16_t)(outSample >> 16);
 }
 
-// This emulates the NES APU mixer (NESDev wiki: APU Mixer).
-// It converts unipolar NES levels to bipolar DS PCM16 samples.
-void __fastcall nesApuMixer(int chan)
+//Render the NES APU channels and emulate the NES APU mixer (NESDev wiki: APU Mixer).
+__inline static int32_t nesApuSoundRender() 
+{
+    int32_t pulse = 0;
+	// Pulse channels: Render via SW table or skip if using DS PSG Hardware
+    if (CurrentPulseMode == PULSE_CH_SW)
+	{
+        pulse = pulse_table[nesApuSoundPulseRender1() + 
+							nesApuSoundPulseRender2()];
+    }
+    // TND: Weighted sum of Triangle, Noise, and DMC (always Software)
+    int32_t tnd = tnd_table[(3 * nesApuSoundTriangleRender1()) + 
+                           (2 * nesApuSoundNoiseRender1()) + 
+                           nesApuSoundDmcRender1()];
+    // Mix 2A03 APU
+    int32_t s_apu = pulse + tnd;
+
+	// Add Sound Expansions
+    if (has_vrc6)
+	{
+		s_apu += VRC6SoundRender();
+	}
+	if (has_fds)
+	{
+		s_apu += FDSSoundRender();
+	}
+    return s_apu;
+}
+
+// Converts unipolar (0 to 32767) NES levels to bipolar (-16384 to 16383) DS PCM16 samples.
+// Centers the waveform to prevent artifacts in the DS mixer.
+__inline static int16_t nesToDsSample(int32_t raw_sample)
+{
+    int32_t mixed = ((raw_sample - DC_OFFSET) * 3) >> 1; // Apply linear gain (1.5x factor is the sweet spot).
+    return clampSample16(mixed);
+}
+
+// Applies sound post-processing
+__inline static void applySoundPostProcessing(int16_t sample, int16_t *outL, int16_t *outR) 
+{
+    if (!stereo_enhanced) 
+	{
+		// Normal mono sound
+        *outL = sample;
+        *outR = sample;
+        return;
+    }
+
+    // R Channel: Original Sample
+    *outR = sample;
+
+    // Obtain delayed sample for L
+    int16_t delayed = delay_line[delay_ptr];
+
+    // Store our current sample in the delay line
+    delay_line[delay_ptr] = sample;
+    delay_ptr = (delay_ptr + 1) % STEREO_DELAY_SIZE;
+
+    // Phase inverted Channel L for a surround pseudo-stereo effect.
+    int32_t left_mix = sample - (delayed >> 1); // 50% vol
+    *outL = clampSample16(left_mix);
+}
+
+void __fastcall soundMain(int chan)
 {
     if (APU_paused) return;
+
     s16 *pcmL = &buffer_L[chan * MIXBUFSIZE];
     s16 *pcmR = &buffer_R[chan * MIXBUFSIZE];
 
     for (int i = 0; i < MIXBUFSIZE; i++) 
-    {
-		int32_t pulse = 0;
-		// Pulse channels: Render via SW table or skip if using DS PSG Hardware
-        if (CurrentPulseMode == PULSE_CH_SW)
-		{
-            pulse = pulse_table[NESAPUSoundSquareRender1() + NESAPUSoundSquareRender2()];
-        }
-		// TND: Weighted sum of Triangle, Noise, and DMC (always Software)
-        int32_t tnd   = tnd_table[(3 * NESAPUSoundTriangleRender1()) + 
-                                  (2 * NESAPUSoundNoiseRender1()) + 
-                                  NESAPUSoundDpcmRender1()];
-		// Mix 2A03 APU
-        int32_t s_apu = (pulse + tnd);
+	{
+        // Get NES sound samples
+        int32_t nes_sample = nesApuSoundRender();
 
-		// Sound Expansions
-        if (has_vrc6)
-		{
-            s_apu += VRC6SoundRender();
-        }
-		if (has_fds)
-        {
-            s_apu += FDSSoundRender();
-        }
-		// Convert unipolar (0 to 32767) to bipolar (-16384 to 16383)
-        // This centers the waveform to prevent artifacts in the DS mixer.
-		int32_t mixed = ((s_apu - DC_OFFSET) * 3) >> 1; // Apply final linear gain (1.5x factor is the sweet spot).
-		// Clamp to 16-bit range (-32768 to 32767)
-		clampSamples16((int16_t)mixed);
-        int16_t end_buffer = (int16_t)mixed;
+        // Convert NES samples to PCM16
+        int16_t ds_sample = nesToDsSample(nes_sample);
 
-		// Sound post-processing
-		if (stereo_enhanced)
-		{
-            // R Channel: Original Sample
-            *pcmR++ = end_buffer;
-
-            // Obtain delayed sample for L
-            int16_t delayed_sample = delay_line[delay_ptr];
-            
-            // Store our current sample in the delay line (with some feedback for reverb)
-            // For simple feedback: current + (previous * 0.3)
-            int32_t feedback = delayed_sample >> 2; // 25% feedback
-			delay_line[delay_ptr] = clampSamples16(end_buffer + feedback);
-            delay_ptr = (delay_ptr + 1) % STEREO_DELAY_SIZE;
-
-            // Mix to L channelL: Original + Delayed
-            // This creates a phase difference the brain translates as 3D audio
-            int32_t left_mix = (end_buffer - (delayed_sample >> 1)); // 50% vol
-            *pcmL++ = clampSamples16(left_mix);
-        }
-        else
-		{
-            // Normal mono sound
-            *pcmL++ = end_buffer;
-            *pcmR++ = end_buffer;
-		}
+        // Apply post-processing effects and write to the audio buffers
+        applySoundPostProcessing(ds_sample, pcmL++, pcmR++);
     }
-	// Process Hardware PSG updates if enabled
+
+    // Process Hardware PSG when enabled
     if (CurrentPulseMode == PULSE_CH_HW)
 	{
-        NESAPUSoundSquareHWRender();
-    }
+		nesApuSoundPulseHwRender();
+	}
 	// Sync APU logic and registers
-	readAPU();
+    readApu();
     APU4015Reg();
 }
 
@@ -264,7 +279,7 @@ void initsound()
 	memset(delay_line, 0, sizeof(delay_line));
     memset(buffer_L, 0, sizeof(buffer_L));
     memset(buffer_R, 0, sizeof(buffer_R));
-	NesAPUSoundSquareHWStop();
+	nesApuSoundPulseHwStop();
 }
 
 void restartsound(int ch)
@@ -294,7 +309,7 @@ void stopsound()
 
 	TIMER_CR(1) = 0;
 	TIMER_CR(0) = 0;
-	NesAPUSoundSquareHWStop();
+	nesApuSoundPulseHwStop();
 }
 
 // Stops sound, restarts sound, reset apu, refreshes 4015 reg, clears buffer
@@ -307,7 +322,7 @@ void lidinterrupt(void)
 void soundinterrupt(void)
 {
 	chan^=1;
-	nesApuMixer(chan);
+	soundMain(chan);
 	if(REG_IF & IRQ_TIMER1)
 	{
 		lidinterrupt();
@@ -326,7 +341,7 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 			memset(delay_line, 0, sizeof(delay_line));
 			memset(buffer_R,0,sizeof(buffer_R));
 			memset(buffer_L,0,sizeof(buffer_L));
-			NesAPUSoundSquareHWStop();
+			nesApuSoundPulseHwStop();
 			break;
 		case FIFO_UNPAUSE:
 			APU_paused=0;
@@ -335,55 +350,55 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 			memset(delay_line, 0, sizeof(delay_line));
 			memset(buffer_R,0,sizeof(buffer_R));
 			memset(buffer_L,0,sizeof(buffer_L));
-			NesAPUSoundSquareHWStop();
+			nesApuSoundPulseHwStop();
 			APU_paused=0;
-			resetAPU();
+			resetApu();
 			APU4015Reg();
-			readAPU();
+			readApu();
 			break;
 		case FIFO_SOUND_RESET:
 			lidinterrupt();
 			memset(delay_line, 0, sizeof(delay_line));
 			memset(buffer_R,0,sizeof(buffer_R));
 			memset(buffer_L,0,sizeof(buffer_L));
-			NesAPUSoundSquareHWStop();
+			nesApuSoundPulseHwStop();
 			break;
 		case FIFO_APU_PAL:
-			SetApuPAL();
-			readAPU();
+			setApuPal();
+			readApu();
 			break;
 		case FIFO_APU_NTSC:
-			SetApuNTSC();
-			readAPU();
+			setApuNtsc();
+			readApu();
 			break;
 		case FIFO_APU_SWAP:
-			SetApuSwap();
-			readAPU();
+			setPulseSwap();
+			readApu();
 			break;
 		case FIFO_APU_NORM:
-			SetApuNormal();
-			readAPU();
+			setPulseNormal();
+			readApu();
 			break;
 		case FIFO_SOUND_UPDATE:
-			readAPU();
+			readApu();
 			APU4015Reg();
 			break;
 		case FIFO_APU_PULSE_SW:
-            SetPulseModeSW();
+            setPulseModeSw();
             break;
         case FIFO_APU_PULSE_HW:
-            SetPulseModeHW();
+            setPulseModeHw();
             break;	
 	}
 }
 
-void readAPU()
+void readApu()
 {
 	u32 msg;
 	if(1) 
 	{
 		while((msg = fifoGetValue32(FIFO_USER_07)) != 0)
-			APUSoundWrite(msg >> 8, msg & 0xFF);
+			apuSoundWrite(msg >> 8, msg & 0xFF);
 		IPC_APUR = IPC_APUW;
 	}
 	else 
@@ -394,7 +409,7 @@ void readAPU()
 		while(start < end)
 		{
 			unsigned int val = src[start&(1024 - 1)];
-			APUSoundWrite(val >> 8, val & 0xFF);
+			apuSoundWrite(val >> 8, val & 0xFF);
 			start++;
 		}
 		IPC_APUR = start;
@@ -410,11 +425,11 @@ void interrupthandler()
 
 void nesmain() 
 {
-	APUSoundInstall();
+	apuSoundInstall();
 	VRC6SoundInstall();
 	FDSSoundInstall();
 	
-	resetAPU();
+	resetApu();
 
 	initsound();
 	restartsound(1);

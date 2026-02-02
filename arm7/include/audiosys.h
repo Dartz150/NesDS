@@ -29,35 +29,36 @@ typedef struct NES_AUDIO_HANDLER_TAG {
 } NES_AUDIO_HANDLER;
 
   
-enum ApuRegion
+enum apuRegion
 {
 	PAL,
 	NTSC
 };
 
-enum ApuCycles
+enum pulseCycles
 {
 	Reverse,
 	Normal
 };
 
-enum PulseMode
+enum pulseMode
 {
     PULSE_CH_SW,
     PULSE_CH_HW
 };
 
-void APU_VBlank_Sync();
+void apuSoundWrite(Uint address, Uint value);
+void apuVblankSync();
 void APU4015Reg(void);
-void APUSoundInstall(void);
+void apuSoundInstall(void);
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph);
 void NESAudioFrequencySet(Uint freq);
 Uint NESAudioFrequencyGet(void);
 extern void (*FDSSoundWriteHandler)(Uint address, Uint value);
 void FDSSoundInstall(void);
-enum ApuRegion getApuCurrentRegion();
-enum ApuCycles getApuCurrentStatus();
-Uint32 GetFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
+enum apuRegion getApuCurrentRegion();
+enum pulseCycles getPulseCurrentStatus();
+Uint32 getFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
 
 #ifdef __cplusplus
 }

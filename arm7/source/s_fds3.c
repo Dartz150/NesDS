@@ -265,12 +265,12 @@ static void __fastcall FDSSoundReseter(FDSSOUND *ch)
     uint32_t sample_rate = NESAudioFrequencyGet();
     uint32_t cpu_clock = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
 
-    fdssound.phasecps = GetFixedPointStep(cpu_clock, sample_rate, PGCPS_BITS);
+    fdssound.phasecps = getFixedPointStep(cpu_clock, sample_rate, PGCPS_BITS);
 
 	// Global Envelope Speed Correction
     // Dividing cpu_clock by 8 provides the correct tick density for the DS,
     // matching the real FDS hardware slow envelope decays.
-    fdssound.envcps = GetFixedPointStep(cpu_clock >> 3, sample_rate, EGCPS_BITS);
+    fdssound.envcps = getFixedPointStep(cpu_clock >> 3, sample_rate, EGCPS_BITS);
     fdssound.envspd = 0xe8 << EGCPS_BITS;
     fdssound.envdisable = 1;
 

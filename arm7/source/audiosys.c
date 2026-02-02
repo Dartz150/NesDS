@@ -48,7 +48,7 @@ Uint NESAudioFrequencyGet(void)
  * @param shift     Fixed point accuracy (CPS_SHIFT).
  * @return          Phase step (cycles per sample) in fixed point.
  */
-Uint32 GetFixedPointStep(Uint32 clock, Uint32 rate, Uint32 shift)
+Uint32 getFixedPointStep(Uint32 clock, Uint32 rate, Uint32 shift)
 {
     // We use 64 bits for the intermediate calculation to avoid overflows
     // before the division, allowing an accurate rounding.
