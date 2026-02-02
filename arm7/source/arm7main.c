@@ -75,9 +75,9 @@ static const int16_t tnd_table[203] =
 };
 
 // DS Mixer buffers
-static s16 buffer_L[MIXBUFSIZE * 2];
-static s16 buffer_R[MIXBUFSIZE * 2];
-static int16_t delay_line[STEREO_DELAY_SIZE];
+static s16 buffer_L[MIXBUFSIZE * 2] ALIGN(32);
+static s16 buffer_R[MIXBUFSIZE * 2] ALIGN(32);
+static int16_t delay_line[STEREO_DELAY_SIZE] ALIGN(32);
 
 // APU mixer status flags (TODO: Move to audiosys.c)
 enum ApuRegion ApuCurrentRegion = NTSC; // Set Flag for the APU settings to match PAL Sound Frequency
