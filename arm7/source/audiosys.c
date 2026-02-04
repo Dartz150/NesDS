@@ -7,7 +7,15 @@
 
 Uint frequency = DS_SOUND_FREQUENCY;
 
+// APU mixer status flags
+enum apuRegion apuCurrentRegion = NTSC;
+enum pulseCycles pulseCurrentStatus = Normal;
+enum pulseMode CurrentPulseMode = PULSE_CH_SW;
+bool stereo_enhanced = true;
+
 static NES_AUDIO_HANDLER *nah = 0;
+// ARM7 side APU status flags
+u32 apu_internal_state = 0;
 
 static void NESAudioHandlerInstallOne(NES_AUDIO_HANDLER *ph)
 {
@@ -40,6 +48,16 @@ Uint NESAudioFrequencyGet(void)
 	return frequency;
 }
 
+enum pulseMode getPulseMode()
+{
+    return CurrentPulseMode;
+}
+
+enum apuRegion getApuCurrentRegion()
+{
+	return apuCurrentRegion;
+}
+
 /**
  * Calculates phase step in fixed point for the oscilators.
  * * Formula: (TotalCycles / (Divisor * OutputFrequency)) << Shift
@@ -57,4 +75,15 @@ Uint32 getFixedPointStep(Uint32 clock, Uint32 rate, Uint32 shift)
 	// We add half of the divisor (rate / 2) to achieve rounding
 	// to the nearest integer (nearest rounding) instead of truncation.
     return (Uint32)((clock_shifted + (rate >> 1)) / rate);
+}
+
+// Set APU status flags sent by the ARM9 to the ARM7 side
+void applyApuStateMask(u32 mask) 
+{
+    apu_internal_state = mask;
+
+    apuCurrentRegion   = (mask & APU_STAT_REGION_PAL) ? PAL : NTSC;
+    pulseCurrentStatus = (mask & APU_STAT_DUTY_REV)   ? Reverse : Normal;
+    CurrentPulseMode   = (mask & APU_STAT_PULSE_HW)   ? PULSE_CH_HW : PULSE_CH_SW;
+    stereo_enhanced    = (mask & APU_STAT_STEREO)     ? true : false;
 }

@@ -49,19 +49,19 @@ enum AudioFilterType
 
 
 // Pulse Channels 1 and 2 Software renderers
-Int32 nesApuSoundPulseRender1();
-Int32 nesApuSoundPulseRender2();
+Int32 nesApuSoundPulseRender1(u32 flags);
+Int32 nesApuSoundPulseRender2(u32 flags);
 
 // Pulse Channels 1 and 2 Hardware renderers
 // PSG channel writes change the sound INSTANTLY. 
 // Always call this after the software sound renderers to avoid sound latency.
-void nesApuSoundPulseHwRender();
+void nesApuSoundPulseHwRender(u32 flags);
 void nesApuSoundPulseHwStop();
 
 //Triangle/Noise/DMC Channels ("TND")
-Int32 nesApuSoundTriangleRender1();
-Int32 nesApuSoundNoiseRender1();
-Int32 nesApuSoundDmcRender1();
+Int32 nesApuSoundTriangleRender1(u32 flags);
+Int32 nesApuSoundNoiseRender1(u32 flags);
+Int32 nesApuSoundDmcRender1(u32 flags);
 void apuSoundInstall();
 void FDSSoundInstall();
 void readApu();

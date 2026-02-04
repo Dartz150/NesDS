@@ -9,6 +9,9 @@
 #include "menu.h"
 #include "NesMachine.h"
 
+// NOTES:
+// y = [menu_start] char offset -1
+
 struct menu_item menu_file_items[] = {
 	{
 		.name = "\rLoad ROM",
@@ -86,41 +89,21 @@ struct menu_item menu_display_items[] =
 	{
 		.name = "\r Top",
 		.type = 1,
-		.x = 1, .y = 10, .w = 6, .h = 3,
+		.x = 21, .y = 7, .w = 6, .h = 3,
 		.func = menu_display_br
 	},
 	// Gfx on Bottom Screen
 	{
 		.name = "\rBottom",
 		.type = 1,
-		.x = 1, .y = 15, .w = 6, .h = 3,
+		.x = 21, .y = 12, .w = 6, .h = 3,
 		.func = menu_display_br
 	},
-	// Invert Duty Cycle TODO:  Move this to sound settings.
-	{
-		.name = "Invert\r Duty",
+	{   // Show all pixels
+		.name = " Show\r All\r pixel",
 		.type = 1,
-		.x = 20, .y = 20, .w = 7, .h = 3,
-		.func = menu_display_br
-	},
-	{
-		.name = "Normal\r Duty",
-		.type = 1,
-		.x = 20, .y = 15, .w = 7, .h = 3,
-		.func = menu_display_br
-	},
-	// Sound Render Modes
-		{
-		.name = "HW PSG\r Sound",
-		.type = 1,
-		.x = 20, .y = 5, .w = 7, .h = 3,
-		.func = menu_display_br
-	},
-	{
-		.name = "SW\r Sound",
-		.type = 1,
-		.x = 20, .y = 10, .w = 7, .h = 3,
-		.func = menu_display_br
+		.x = 11, .y = 19, .w = 7, .h = 3,
+		.func = show_all_pixel,
 	},
 };
 
@@ -200,7 +183,7 @@ struct menu_item menu_emulation_items[] = {
 
 struct menu_unit menu_display = {
 	.top = "Display",
-	.subcnt = 8,
+	.subcnt = 5,
 	.start = menu_display_start,
 	.item = menu_display_items,
 };
@@ -267,16 +250,10 @@ struct menu_item menu_game_items[] = {
 		.x = 1, .y = 19, .w = 7, .h = 3,
 		.child = &menu_extra,
 	},
-	{
-		.name = " Show\r All\r pixel",
-		.type = 1,
-		.x = 11, .y = 19, .w = 7, .h = 3,
-		.func = show_all_pixel,
-	},
 };
 struct menu_unit menu_game = {
 	.top = "Game",
-	.subcnt = 8,
+	.subcnt = 7,
 	.start = menu_game_start,
 	.item = menu_game_items,
 };
@@ -479,56 +456,130 @@ struct menu_item menu_config_items[] = {
 		.x = 21, .y = 15, .w = 6, .h = 3,
 		.func = menu_config_func,
 	},
-	{
-		.name = "Sound Reset",
-		.type = 1,
-		.x = 10, .y = 21, .w = 11, .h = 1,
-		.func = menu_config_func,
-	},
 };
 
 struct menu_unit menu_config = {
 	.top = "Config",
-	.subcnt = 5,
+	.subcnt = 4,
 	.start = menu_config_start,
 	.item = menu_config_items,
 };
 
+struct menu_item menu_s_apu_items[] =
+{
+	{	// Pulse 1
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 7, .w = 2, .h = 1,
+		.func = menu_s_apu_br,
+	},
+	{	// Pulse 2
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 10, .w = 2, .h = 1,
+		.func = menu_s_apu_br,
+	},
+	{	// Triangle
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 13, .w = 2, .h = 1,
+		.func = menu_s_apu_br,
+	},
+	{	// Noise
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 16, .w = 2, .h = 1,
+		.func = menu_s_apu_br,
+	},
+	{	// DCM
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 19, .w = 2, .h = 1,
+		.func = menu_s_apu_br,
+	},
+};
+
+struct menu_item menu_s_exp_items[] =
+{
+	{	// VRC6 Pulse 1
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 7, .w = 2, .h = 1,
+		.func = menu_s_exp_br,
+	},
+	{	// VRC6 Pulse 2
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 10, .w = 2, .h = 1,
+		.func = menu_s_exp_br,
+	},
+	{   // VRC6 Saw
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 13, .w = 2, .h = 1,
+		.func = menu_s_exp_br,
+	},
+	{	// FDS
+		.name = "",
+		.type = 1,
+		.x = 16, .y = 16, .w = 2, .h = 1,
+		.func = menu_s_exp_br,
+	},
+};
+
+struct menu_unit menu_s_apu =
+{
+	.top = "APU",
+	.subcnt = 5,
+	.start = menu_s_apu_start,
+	.item = menu_s_apu_items,
+};
+
+struct menu_unit menu_s_exp =
+{
+	.top = "Exp.",
+	.subcnt = 4,
+	.start = menu_s_exp_start,
+	.item = menu_s_exp_items,
+};
+
 struct menu_item menu_sound_items[] = 
 {
-	// Volume Settings
-	{
-		.name = "\r Auto",
+	{	// Sound Post-processing FX
+        .name = "",
+        .type = 1,
+        .x = 1, .y = 5, .w = 8, .h = 2,
+        .func = menu_sound_br
+    },
+	{	// Pulse Render Mode
+        .name = " Render",
+        .type = 1,
+        .x = 1, .y = 10, .w = 8, .h = 2,
+        .func = menu_sound_br
+    },
+    {   // Pulse Duty Mode
+        .name = "  Duty",
+        .type = 1,
+        .x = 11, .y = 10, .w = 8, .h = 2,
+        .func = menu_sound_br
+    },
+	{   // APU Sound Toggles
+        .name = "  APU\rChannels",
+        .type = 0,
+        .x = 1, .y = 17, .w = 8, .h = 2,
+        .child = &menu_s_apu,
+    },
+	{   // Expansion Sound Toggles
+        .name = "Expansion\rChannels",
+        .type = 0,
+        .x = 11, .y = 17, .w = 8, .h = 2,
+        .child = &menu_s_exp,
+    },
+	{	// Sound Reset
+		.name = "Sound Reset",
 		.type = 1,
-		.x = 13, .y = 5, .w = 6, .h = 3,
-		.func = dummy_sound_function2,
-	},
-	// Panning Settings
-	{
-		.name = "\rManual",
-		.type = 1,
-		.x = 21, .y = 5, .w = 6, .h = 3,
-		.func = dummy_sound_function3,
-	},
-	// Sound Reverb
-	{
-		.name = "\r Top",
-		.type = 1,
-		.x = 13, .y = 10, .w = 6, .h = 3,
-		.func = dummy_sound_function4,
-	},
-	{
-		.name = "\r Sub",
-		.type = 1,
-		.x = 21, .y = 10, .w = 6, .h = 3,
-		.func = dummy_sound_function5,
-	},
-	// Save dir
-	{
-		.name = "\r Sub",
-		.type = 1,
-		.x = 13, .y = 15, .w = 6, .h = 3,
-		.func = dummy_sound_function6,
+		.x = 10, .y = 21, .w = 11, .h = 1,
+		.func = menu_sound_br,
 	},
 };
 
@@ -536,7 +587,7 @@ struct menu_item menu_sound_items[] =
 struct menu_unit menu_sound = 
 {
 	.top = "Sound",
-	.subcnt = 5,
+	.subcnt = 6,
 	.start = menu_sound_start,
 	.item = menu_sound_items,
 };

@@ -11,6 +11,7 @@
 //frameskip min = 1, max = xxxxxx....
 int palette_value = 0;
 int soft_frameskip = 3;
+u32 __apu_flags = 0; // Current NES APU Sound cfg. Status
 #define PALETTE_VALUE palette_value
 #define SOFT_FRAMESKIP soft_frameskip
 

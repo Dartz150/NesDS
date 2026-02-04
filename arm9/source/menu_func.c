@@ -39,6 +39,12 @@ u8 nes_rgb[] = {
 	0xff,0xe7,0xa3, 0xe3,0xff,0xa3, 0xab,0xf3,0xbf, 0xb3,0xff,0xcf, 0x9f,0xff,0xf3, 0xd1,0xd1,0xd1, 0x11,0x11,0x11, 0x11,0x11,0x11
 };
 
+void updateApuSettings()
+{
+    // Send: [ 24 bits of flags | 8 bits command ]
+    u32 msg = (__apu_flags << 8) | FIFO_APU_UPDATE_FLAGS;
+    fifoSendValue32(FIFO_USER_08, msg);
+}
 
 void menu_hide(void)
 {
@@ -335,9 +341,13 @@ char *paltxt[] = {
 // Console text labels for the Display Settings Page
 void menu_display_start(void)
 {
-	consoletext(64*5 + 32, brightxt[gammavalue], 0x1000);
-	hex8(64*8 + 36, palette_value);
-	consoletext(64*10 + 20, paltxt[palette_value], 0x1000);
+	consoletext(64*5 + 18, brightxt[gammavalue], 0x1000);
+	hex8(64*8 + 22, palette_value);
+	consoletext(64*10 + 5, paltxt[palette_value], 0x1000);
+	consoletext(64*5 + 40, "GFX Screen", 0);
+	consoletext(64*12 + ((__emuflags & SCREENSWAP) ? 58 : 25), "*", 0x1000);
+	consoletext(64*12 + ((__emuflags & SCREENSWAP) ? 25 : 58), " ", 0x1000);
+
 	consoletext(64*18 + 24, "ALL:", 0);
 	consoletext(64*18 + 32, (__emuflags&ALLPIXELON)? "YES":"NO ", 0x1000);
 }
@@ -546,7 +556,7 @@ void menu_display_br(void)
 		{
 			gammavalue = 0;
 		}
-		consoletext(64*5 + 32, brightxt[gammavalue], 0x1000);
+		consoletext(64*5 + 18, brightxt[gammavalue], 0x1000);
 		brightset();
 		break;
 	// Palette Selector	
@@ -556,8 +566,8 @@ void menu_display_br(void)
 		{
 			palette_value = 0;
 		}
-		hex8(64*8 + 36, palette_value);
-		consoletext(64*10 + 20, paltxt[palette_value], 0x1000);
+		hex8(64*8 + 22, palette_value);
+		consoletext(64*10 + 5, paltxt[palette_value], 0x1000);
 		palset();
 		brightset();
 		break;	
@@ -567,26 +577,6 @@ void menu_display_br(void)
 	case 3: //On sub
 		__emuflags |= SCREENSWAP;
 		break;
-	case 4:
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_SWAP);
-		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
-		break;
-	case 5: 
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_NORM);
-		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
-		break;
-	case 6:
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PULSE_HW);
-		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
-		break;
-	case 7: 
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PULSE_SW);
-		fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
-		break;	
 	}	
 	menu_stat = 3;
 }
@@ -596,21 +586,101 @@ void menu_emu_pal(void)
 {
 	menu_stat = 3;
 	__emuflags |= PALTIMING;
+	__apu_flags |= APU_STAT_REGION_PAL;
 	ntsc_pal_reset(__emuflags);
 	consoletext(64*6 + 12, " PAL ", 0x1000);
 
-	fifoSendValue32(FIFO_USER_08, FIFO_APU_PAL);
-	fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
+	updateApuSettings(); 
+    fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
 }
 
 void menu_emu_ntsc(void)
 {
 	menu_stat = 3;
 	__emuflags &= ~PALTIMING;
+    __apu_flags &= ~APU_STAT_REGION_PAL;
 	ntsc_pal_reset(__emuflags);
 	consoletext(64*6 + 12, " NTSC", 0x1000);
-	fifoSendValue32(FIFO_USER_08, FIFO_APU_NTSC);
+	updateApuSettings();
 	fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
+}
+
+// lastbutton_cnt only needs to match a consecutive integer...
+void menu_sound_br(void)
+{
+    switch (lastbutton_cnt)
+    {
+		case 0: // Stereo
+            __apu_flags ^= APU_STAT_STEREO;
+            break;
+        case 1: // Pulse Mode
+			// We need to pause the APU to avoid PSG leftovers
+			fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
+            __apu_flags ^= APU_STAT_PULSE_HW;
+			fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
+            break;
+        case 2: // Duty
+            __apu_flags ^= APU_STAT_DUTY_REV;
+			updateApuSettings();
+			fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
+            break;
+		case 3: // Sound reset
+		fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
+			break;
+    } 
+    // Sync with ARM7 
+    updateApuSettings();
+    menu_stat = 1; 
+    menu_draw = 0;
+}
+
+void menu_s_apu_br(void)
+{
+    switch (lastbutton_cnt)
+    {
+		case 0: // Pulse 1
+            __apu_flags ^= APU_STAT_MUTE_P1;
+            break;
+        case 1: // Pulse 2
+            __apu_flags ^= APU_STAT_MUTE_P2;
+            break;
+        case 2: // Triangle
+            __apu_flags ^= APU_STAT_MUTE_TRI;
+            break;
+        case 3: // Noise
+            __apu_flags ^= APU_STAT_MUTE_NOI;
+            break;
+        case 4: // DMC
+            __apu_flags ^= APU_STAT_MUTE_DMC;
+            break;						
+    }
+    // Sync with ARM7
+    updateApuSettings();
+    menu_stat = 1; 
+    menu_draw = 0;
+}
+
+void menu_s_exp_br(void)
+{
+    switch (lastbutton_cnt)
+    {
+		case 0: // VRC6 Pulse 1
+            __apu_flags ^= APU_STAT_MUTE_VRC_P1;
+            break;
+        case 1: // VRC6 Pulse 2
+            __apu_flags ^= APU_STAT_MUTE_VRC_P2;
+            break;
+        case 2: // VRC6 Saw
+            __apu_flags ^= APU_STAT_MUTE_VRC_SAW;
+            break;
+        case 3: // FDS
+            __apu_flags ^= APU_STAT_MUTE_FDS;
+            break;
+    } 
+    // Sync with ARM7
+    updateApuSettings();
+    menu_stat = 1; 
+    menu_draw = 0;
 }
 
 // TODO: Refactor everything in this code with cases, 
@@ -712,7 +782,7 @@ void brightset(void) {
 //PPU_init();
 }
 
-// Palette sets. Refactored to cases
+// Palette presets
 void palset(void)
 {
 	switch (palette_value)
@@ -1206,9 +1276,6 @@ void menu_config_start(void)
 	consoletext(64*7 + 1, "Save SRAM", 0);
 	consoletext(64*7 + ((__emuflags & AUTOSRAM) ? 25 : 58), "*", 0x1000);
 	consoletext(64*7 + ((__emuflags & AUTOSRAM) ? 58 : 25), " ", 0x1000);
-	consoletext(64*12 + 1, "GFX Screen", 0);
-	consoletext(64*12 + ((__emuflags & SCREENSWAP) ? 58 : 25), "*", 0x1000);
-	consoletext(64*12 + ((__emuflags & SCREENSWAP) ? 25 : 58), " ", 0x1000);
 	consoletext(64*17 + 1, "Saves dir", 0);
 	consoletext(64*17 + (use_saves_dir ? 25 : 58), "*", 0x1000);
 	consoletext(64*17 + (use_saves_dir ? 58 : 25), " ", 0x1000);
@@ -1216,54 +1283,63 @@ void menu_config_start(void)
 
 void menu_sound_start(void)
 {
-	//Pulse Channel 1
-	consoletext(64*7 + 1, "Pulse Channel 1", 0);
-	consoletext(64*7 + ((__emuflags & AUTOSRAM) ? 25 : 58), "*", 0x1000);
-	consoletext(64*7 + ((__emuflags & AUTOSRAM) ? 58 : 25), " ", 0x1000);
-    //Pulse Channel 2
-	consoletext(64*12 + 1, "Pulse Channel 2", 0);
-	consoletext(64*12 + ((__emuflags & SCREENSWAP) ? 58 : 25), "*", 0x1000);
-	consoletext(64*12 + ((__emuflags & SCREENSWAP) ? 25 : 58), " ", 0x1000);
-    //Pulse Channel 2
-	consoletext(64*17 + 1, "Saves dir", 0);
-	consoletext(64*17 + (use_saves_dir ? 25 : 58), "*", 0x1000);
-	consoletext(64*17 + (use_saves_dir ? 58 : 25), " ", 0x1000);
+    // Sound Post-processing FX
+    consoletext(64*4 + 8, "<Sound Effects>", 0);
+    consoletext(64*6 + 4, (__apu_flags & APU_STAT_STEREO) ? "[Stereo]" : " [Mono]", 0x1000);
+	// TODO: Add Reverb FX
+	// consoletext(64*6 + 24, (__apu_flags & APU_STAT_REVERB) ? "[Reverb]" : " [Normal]", 0x1000);
+
+	// Pulse Channel Modes
+    consoletext(64*9 + 4, "<Pulse Ch. Modes>", 0);
+	// Pulse Render Mode
+    consoletext(64*14 + 4, (__apu_flags & APU_STAT_PULSE_HW) ? "[PSG HW]" : " [Soft]", 0x1000);
+	// Pulse Duty Mode
+    //consoletext(64*17 + 2, "<Pulse Ch. Duty>", 0);
+    consoletext(64*14 + 24, (__apu_flags & APU_STAT_DUTY_REV) ? "[Reverse]" : "[Normal]", 0x1000);
+	// Channel Sound toggles
+    consoletext(64*16 + 4, "<Sound Ch. Toggles>", 0);
 }
 
-void dummy_sound_function1(void)
+void menu_s_apu_start(void)
 {
-	return printf("Volume Options");
+	int title_y = 2;
+	int item_y = 34;
+	// Title
+	consoletext(64*4 + 8, "<NES APU Sound Channels>", 0);
+    // Pulse 1
+    consoletext(64*8 + title_y, "<Pulse 1>", 0);
+    consoletext(64*8 + item_y, (__apu_flags & APU_STAT_MUTE_P1) ? "" : "*", 0x1000);
+	// Pulse2
+    consoletext(64*11 + title_y, "<Pulse 2>", 0);
+	consoletext(64*11 + item_y, (__apu_flags & APU_STAT_MUTE_P2) ? "" : "*", 0x1000);
+	// Triangle
+	consoletext(64*14 + title_y, "<Triangle>", 0);
+    consoletext(64*14 + item_y, (__apu_flags & APU_STAT_MUTE_TRI) ? "" : "*", 0x1000);
+	// Noise
+	consoletext(64*17 + title_y, "<Noise>", 0);
+    consoletext(64*17 + item_y, (__apu_flags & APU_STAT_MUTE_NOI) ? "" : "*", 0x1000);
+	// DMC
+    consoletext(64*20 + title_y, "<DMC>", 0);
+	consoletext(64*20 + item_y, (__apu_flags & APU_STAT_MUTE_DMC) ? "" : "*", 0x1000);
 }
 
-void dummy_sound_function2(void)
+void menu_s_exp_start(void)
 {
-	return printf( "Panning Options");
+	// Title
+	consoletext(64*4 + 2, "<NES Expansion Sound Channels>", 0);
+    // VRC6 Pulse 1
+    consoletext(64*8 + 2, "<VRC6 Pulse 1>", 0);
+    consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_VRC_P1) ? "" : "*", 0x1000);
+	// VRC6 Pulse2
+    consoletext(64*11 + 2, "<VRC6 Pulse 2>", 0);
+	consoletext(64*11 + 34, (__apu_flags & APU_STAT_MUTE_VRC_P2) ? "" : "*", 0x1000);
+	// VRC6 Saw
+	consoletext(64*14 + 2, "<VRC6 Saw>", 0);
+    consoletext(64*14 + 34, (__apu_flags & APU_STAT_MUTE_VRC_SAW) ? "" : "*", 0x1000);
+	// FDS Sound
+	consoletext(64*17 + 2, "<FDS>", 0);
+    consoletext(64*17 + 34, (__apu_flags & APU_STAT_MUTE_FDS) ? "" : "*", 0x1000);
 }
-
-void dummy_sound_function3(void)
-{
-	return printf("Enable Stereo Sound");
-}
-
-void dummy_sound_function4(void)
-{
-	return printf("Enable Reververation");
-}
-
-void dummy_sound_function5(void)
-{
-	return printf("Swap Duty Cycles");
-}
-
-void dummy_sound_function6(void)
-{
-	return printf("Sound Filters");
-}
-
-// bool is_FF_RW_Muted(void)
-// {
-// 	fread()
-// }
 
 void menu_config_func(void)
 {
@@ -1280,9 +1356,6 @@ void menu_config_func(void)
 		break;
 	case 3: // No Saves Subdir
 		use_saves_dir = false;
-		break;
-	case 4: //Sound reset
-		fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
 		break;
 	}
 	menu_config_start();
@@ -1314,7 +1387,6 @@ void menu_saveini(void)
 {
 	//Avoid sound screech during .ini writes
 	fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
-	fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
 	int pos = 0;
 	int i, j, k;
 
@@ -1363,6 +1435,7 @@ void menu_saveini(void)
 	ini_putl("nesDSrev2", "Screen_Palette", palette_value, ininame);
 	ini_putl("nesDSrev2", "AutoFire", autofire_fps, ininame);
 	ini_putl("nesDSrev2", "UseSavesDir", use_saves_dir, ininame);
+	ini_putl("nesDSrev2", "AudioFlags", __apu_flags, ininame);
 
 	// short-cuts
 	for (i = 0; i < MAX_SC; i++) {

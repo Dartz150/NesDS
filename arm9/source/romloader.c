@@ -321,10 +321,12 @@ int loadrom() {
 	 // Set the correct timing for APU PAL pitch emulation
 	if ((__emuflags & PALTIMING) == 0)
 	{
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_NTSC);
+		__apu_flags &= ~APU_STAT_REGION_PAL;
+		updateApuSettings();
 		mixer_reset();
 	} else {
-		fifoSendValue32(FIFO_USER_08, FIFO_APU_PAL);
+		__apu_flags |= APU_STAT_REGION_PAL;
+		updateApuSettings();
 		mixer_reset();
 	}
 	initcart(roms);
@@ -496,6 +498,8 @@ int keystr2int(const char *buf)
 	return ret;
 }
 
+#define APU_STAT_DEFAULT (APU_STAT_STEREO | APU_STAT_PULSE_HW)
+
 int bootext() {
 	// interrupt 0: set my dir (inibuf)
 	int i;
@@ -522,6 +526,9 @@ int bootext() {
 			if (iniret == 1) __emuflags |= SPLINE;
 			else __emuflags |= SOFTRENDER;
 		}
+		// Load APU Status audio cfgs, APU_STAT_DEFAULT sets the defaults
+		__apu_flags = (u32)ini_getl("nesDSrev2", "AudioFlags", APU_STAT_DEFAULT, ininame);
+		updateApuSettings();
 		if ((iniret = ini_getl("nesDSrev2","AutoSRAM",0,ininame)) != 0) __emuflags |= AUTOSRAM;
 		if ((iniret = ini_getl("nesDSrev2","Screen_Scale",0,ininame)) != 0) ad_scale = iniret;
 		if ((iniret = ini_getl("nesDSrev2","Screen_Offset",0,ininame)) != 0) ad_ypos = iniret;

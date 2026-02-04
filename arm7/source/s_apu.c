@@ -155,15 +155,17 @@ typedef struct
 } APUSOUND __attribute__((aligned(32)));
 
 static APUSOUND apu;
-static int apuirq = 0;
+static int  apuirq = 0;
+static bool cache_is_pal = false;
+static u8   cache_pulse_reverse = 0;
 
 // Square Duty LUT
-static const Uint8 square_duty_table[4] = 
+static const Uint8 square_duty_table_normal[4] = 
 { 
 	0x02, 0x04, 0x08, 0x0C
 };
 
-static const Uint8 inverted_square_duty_table[4] = 
+static const Uint8 square_duty_table_inverted[4] = 
 { 
 	0x0C, 0x08, 0x04, 0x02
 };
@@ -204,6 +206,10 @@ static const Uint32 dpcm_freq_table_pal[16] =
 	0x18E, 0x162, 0x13C, 0x12A, 0x114, 0x0EC, 0x0D2, 0x0C6,
 	0x0B0, 0x094, 0x084, 0x076, 0x062, 0x04E, 0x042, 0x032
 };
+
+static const Uint8  *square_duty_table;
+static const Uint32 *noise_time_period_table;
+static const Uint32 *dpcm_freq_table;
 
 __inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 {
@@ -372,7 +378,7 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, int ds_chan, int pan)
     }
 
 	// Convert wavelenght, duty and volume parameters to the DS PSG hardware channel
-    u16 ds_wl = nesToDsTimer(ch->wl, (getApuCurrentRegion() == PAL));
+    u16 ds_wl 	 = nesToDsTimer(ch->wl, cache_is_pal);
     u32 ds_duty  = nesDutyToDs(ch->duty);
     u8 volume    = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
     u8 ds_vol    = volume << 1; 
@@ -402,10 +408,16 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, int ds_chan, int pan)
 
 // PSG channel writes change the sound INSTANTLY. 
 // Always call this after the software sound renderers to avoid sound latency.
-void nesApuSoundPulseHwRender()
+void nesApuSoundPulseHwRender(u32 flags)
 {
-        nesApuSoundPulseUpdateHw(&apu.square[0], NES_APU_SQUARE_1_CH, SQUARE_PAN_1_CH);
-        nesApuSoundPulseUpdateHw(&apu.square[1], NES_APU_SQUARE_2_CH, SQUARE_PAN_2_CH);
+	// Check if the APU flags have any of the pulse channels muted
+    (flags & APU_STAT_MUTE_P1)
+        ? snd_stopChannel(NES_APU_SQUARE_1_CH)
+        : nesApuSoundPulseUpdateHw(&apu.square[0], NES_APU_SQUARE_1_CH, SQUARE_PAN_1_CH);
+
+    (flags & APU_STAT_MUTE_P2)
+        ? snd_stopChannel(NES_APU_SQUARE_2_CH)
+        : nesApuSoundPulseUpdateHw(&apu.square[1], NES_APU_SQUARE_2_CH, SQUARE_PAN_2_CH);
 }
 
 void nesApuSoundPulseHwStop()
@@ -471,14 +483,14 @@ static Int32 nesApuSoundPulseRender(NESAPU_SQUARE *ch)
 	return (ch->st >= ch->duty) ? output : 0; // (NESDev: HIGH=vol, LOW=0).
 }
 
-Int32 nesApuSoundPulseRender1()
+Int32 nesApuSoundPulseRender1(u32 flags)
 {
-	return nesApuSoundPulseRender(&apu.square[0]);
+	return (flags & APU_STAT_MUTE_P1) ? 0 : nesApuSoundPulseRender(&apu.square[0]);
 }
 
-Int32 nesApuSoundPulseRender2()
+Int32 nesApuSoundPulseRender2(u32 flags)
 {
-	return nesApuSoundPulseRender(&apu.square[1]);
+	return (flags & APU_STAT_MUTE_P2) ? 0 : nesApuSoundPulseRender(&apu.square[1]);
 }
 
 static Int32 nesApuSoundTriangleRender(NESAPU_TRIANGLE *ch)
@@ -536,9 +548,9 @@ static Int32 nesApuSoundTriangleRender(NESAPU_TRIANGLE *ch)
 	return output; // 0-15 unipolar (e.g., 0=peak low, 15=peak high).
 }
 
-Int32 nesApuSoundTriangleRender1()
+Int32 nesApuSoundTriangleRender1(u32 flags)
 {
-	return nesApuSoundTriangleRender(&apu.triangle);
+	return (flags & APU_STAT_MUTE_TRI) ? 0 : nesApuSoundTriangleRender(&apu.triangle);
 }
 
 static Int32 nesApuSoundNoiseRender(NESAPU_NOISE *ch)
@@ -598,9 +610,9 @@ static Int32 nesApuSoundNoiseRender(NESAPU_NOISE *ch)
     return (Int32)vol; // 0-15 unipolar (silence=0, full vol=15).
 }
 
-Int32 nesApuSoundNoiseRender1()
+Int32 nesApuSoundNoiseRender1(u32 flags)
 {
-	return nesApuSoundNoiseRender(&apu.noise);
+	return (flags & APU_STAT_MUTE_NOI) ? 0 : nesApuSoundNoiseRender(&apu.noise);
 }
 
 __inline static void nesApuSoundDmcRead(NESAPU_DPCM *ch)
@@ -750,9 +762,9 @@ static Int32 __fastcall nesApuSoundDmcRender()
     #undef ch
 }
 
-Int32 nesApuSoundDmcRender1()
+Int32 nesApuSoundDmcRender1(u32 flags)
 {
-	return nesApuSoundDmcRender();
+	return (flags & APU_STAT_MUTE_DMC) ? 0 : nesApuSoundDmcRender();
 }
 
 void apuSoundWrite(Uint address, Uint value)
@@ -781,14 +793,7 @@ void apuSoundWrite(Uint address, Uint value)
 				apu.square[ch].ed.looping_enable = (value & PULSE_ENV_LOOP) ? 1 : 0;
 				
 				// Load the Duty Cycle from the table
-				if (getPulseCurrentStatus() == Reverse)
-				{
-					apu.square[ch].duty = inverted_square_duty_table[value >> 6];
-				}
-				else 
-				{
-					apu.square[ch].duty = square_duty_table[value >> 6];
-				}
+				apu.square[ch].duty = square_duty_table[value >> 6];
 				break;
 			}
 			// Sweep unit ($4001 / $4005)
@@ -880,14 +885,7 @@ void apuSoundWrite(Uint address, Uint value)
 			// Loop noise/period ($400E)
 			case APU_NOISE_PERIOD:
 			{
-				if (getApuCurrentRegion() == PAL)
-				{
-					apu.noise.wl = (noise_time_period_table_pal[value & NOISE_VOLUME_MASK]);
-				} 
-				else 
-				{
-					apu.noise.wl = (noise_time_period_table_ntsc[value & NOISE_VOLUME_MASK]);
-				}
+				apu.noise.wl = (noise_time_period_table[value & NOISE_VOLUME_MASK]);
 				apu.noise.rngshort = value & NOISE_MODE;
 				break;
 			}
@@ -906,14 +904,7 @@ void apuSoundWrite(Uint address, Uint value)
 			// IRQ enable, loop, freq ($4010)
 			case APU_DMC_CTRL:
 			{
-				if (getApuCurrentRegion() == PAL)
-				{
-					apu.dpcm.wl = dpcm_freq_table_pal[value & DMC_RATE_MASK];
-				}
-				else
-				{
-					apu.dpcm.wl = dpcm_freq_table_ntsc[value & DMC_RATE_MASK];
-				}
+			    apu.dpcm.wl = dpcm_freq_table[value & DMC_RATE_MASK];
 				apu.dpcm.loop_enable = value & DMC_LOOP;
 				apu.dpcm.irq_enable = value & DMC_IRQ_ENABLE;
 				if (!apu.dpcm.irq_enable)
@@ -1095,21 +1086,21 @@ static void nesApuSoundPulseReset(NESAPU_SQUARE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_SQUARE));
 	nesApuSoundPulseHwStop();
-	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
 	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 static void nesApuSoundTriangleReset(NESAPU_TRIANGLE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_TRIANGLE));
-	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
 	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 static void nesApuSoundNoiseReset(NESAPU_NOISE *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_NOISE));
-	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
 	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 	ch->rng = 1;
 }
@@ -1117,22 +1108,35 @@ static void nesApuSoundNoiseReset(NESAPU_NOISE *ch)
 static void nesApuSoundDmcReset(NESAPU_DPCM *ch)
 {
 	XMEMSET(ch, 0, sizeof(NESAPU_DPCM));
-	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
 	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
 	ch->pcm_ptr = 0;
 }
 
+// Update APU Status flags only when the APU resets
+static void apuSyncConfigCache(void)
+{
+    cache_is_pal = (apuCurrentRegion == PAL);
+    cache_pulse_reverse = (pulseCurrentStatus == Reverse);
+
+	// Set per-region table pointers
+	square_duty_table = cache_pulse_reverse ? square_duty_table_inverted : square_duty_table_normal;
+    noise_time_period_table = cache_is_pal ? noise_time_period_table_pal : noise_time_period_table_ntsc;
+    dpcm_freq_table = cache_is_pal ? dpcm_freq_table_pal : dpcm_freq_table_ntsc;
+}
+
 static void __fastcall apuSoundReset(void)
 {
-	int cpu_clock = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
+	apuSyncConfigCache();
+	int cpu_clock = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
 	Uint i;
 	nesApuSoundPulseReset(&apu.square[0]);
 	nesApuSoundPulseReset(&apu.square[1]);
 	nesApuSoundTriangleReset(&apu.triangle);
 	nesApuSoundNoiseReset(&apu.noise);
 	nesApuSoundDmcReset(&apu.dpcm);
-	apu.cpf[1] = getFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 : 240, CPS_SHIFT);
-	apu.cpf[2] = getFixedPointStep(cpu_clock, (getApuCurrentRegion() == PAL) ? 200 * 4 / 5 : 240 * 4 / 5, CPS_SHIFT);
+	apu.cpf[1] = getFixedPointStep(cpu_clock, (cache_is_pal) ? 200 : 240, CPS_SHIFT);
+	apu.cpf[2] = getFixedPointStep(cpu_clock, (cache_is_pal) ? 200 * 4 / 5 : 240 * 4 / 5, CPS_SHIFT);
 	apu.cpf[0] = apu.cpf[1];
 	apu.square[1].sw.ch = 1;
 	apu.square[0].cpf = &apu.cpf[0];

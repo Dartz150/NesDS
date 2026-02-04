@@ -4,6 +4,7 @@
 #include <nds.h>
 #include "nestypes.h"
 #include "s_defs.h"
+#include "SoundIPC.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,11 +55,18 @@ void apuSoundInstall(void);
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph);
 void NESAudioFrequencySet(Uint freq);
 Uint NESAudioFrequencyGet(void);
-extern void (*FDSSoundWriteHandler)(Uint address, Uint value);
-void FDSSoundInstall(void);
-enum apuRegion getApuCurrentRegion();
-enum pulseCycles getPulseCurrentStatus();
 Uint32 getFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
+void applyApuStateMask(u32 mask);
+
+// APU mixer status flags
+enum apuRegion getApuCurrentRegion();
+enum pulseMode getPulseMode();
+
+extern enum apuRegion apuCurrentRegion; // Set Flag for the APU settings to match PAL Sound Frequency
+extern enum pulseCycles pulseCurrentStatus; // SWAP DUTY CYCLES
+extern enum pulseMode CurrentPulseMode; // Change pulse 1/2 renderer
+extern bool stereo_enhanced;
+extern u32 apu_internal_state;
 
 #ifdef __cplusplus
 }

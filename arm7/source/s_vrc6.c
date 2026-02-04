@@ -8,7 +8,7 @@
 // (:::) VRC6 AUDIO ENGINE (:::) //
 // Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio and previous code by "huiminghao".
 
-#define VRC6_MIX_FACTOR 380 //  23,180 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 380
+#define VRC6_MIX_FACTOR 319 //  19,500 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 319
 
 typedef struct
 {
@@ -121,11 +121,14 @@ static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
 }
 
 // VRC6 Mixer. NesDev: "Lineal 6 bit sum (max 61: 15 + 15 + 31)"
-int32_t VRC6SoundRender() 
+int32_t VRC6SoundRender(u32 flags) 
 {
-    return (VRC6SoundSquareRender(&vrc6s.square[0]) + 
-            VRC6SoundSquareRender(&vrc6s.square[1]) + 
-            VRC6SoundSawRender(&vrc6s.saw)) * VRC6_MIX_FACTOR;
+    int32_t sum = 0;
+    if (!(flags & APU_STAT_MUTE_VRC_P1)) sum += VRC6SoundSquareRender(&vrc6s.square[0]);
+    if (!(flags & APU_STAT_MUTE_VRC_P2)) sum += VRC6SoundSquareRender(&vrc6s.square[1]);
+    if (!(flags & APU_STAT_MUTE_VRC_SAW)) sum += VRC6SoundSawRender(&vrc6s.saw);
+    
+    return sum * VRC6_MIX_FACTOR;
 }
 
 static void VRC6SoundWriteSquare(VRC6_SQUARE *ch, Uint address, Uint value)
@@ -185,14 +188,14 @@ void VRC6SoundWriteB000(Uint address, Uint value)
 
 void VRC6SoundSquareReset(VRC6_SQUARE *ch)
 {
-	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	// There's no VRC6 PAL titles, always set this to NTSC
+	ch->cps = getFixedPointStep(NES_CPU_NTSC, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 void __fastcall VRC6SoundSawReset(VRC6_SAW *ch)
 {
-	int apu_region = (getApuCurrentRegion() == PAL) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	// There's no VRC6 PAL titles, always set this to NTSC
+	ch->cps = getFixedPointStep(NES_CPU_NTSC, NESAudioFrequencyGet(), CPS_SHIFT);
 }
 
 static NES_RESET_HANDLER s_vrc6_reset_handler[] =

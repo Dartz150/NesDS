@@ -34,6 +34,9 @@ typedef struct {
 
 extern RP2A03 rp2A03;
 extern NESCore globals;
+extern u32 __apu_flags; // Current NES Sound cfg. Status
+
+void updateApuSettings();
 
 #ifdef __cplusplus
 }
