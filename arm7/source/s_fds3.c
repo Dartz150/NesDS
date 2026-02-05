@@ -263,7 +263,7 @@ void __fastcall FDSSoundWrite(Uint address, Uint value)
 static void __fastcall FDSSoundReseter(FDSSOUND *ch) 
 {
     XMEMSET(&fdssound, 0, sizeof(FDSSOUND));
-    uint32_t sample_rate = NESAudioFrequencyGet();
+    uint32_t sample_rate = DS_SOUND_FREQUENCY;
     // There's no FDS PAL titles, always set it to NTSC
     fdssound.phasecps = getFixedPointStep(NES_CPU_NTSC, sample_rate, PGCPS_BITS);
 	// Global Envelope Speed Correction

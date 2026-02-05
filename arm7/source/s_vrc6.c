@@ -189,13 +189,13 @@ void VRC6SoundWriteB000(Uint address, Uint value)
 void VRC6SoundSquareReset(VRC6_SQUARE *ch)
 {
 	// There's no VRC6 PAL titles, always set this to NTSC
-	ch->cps = getFixedPointStep(NES_CPU_NTSC, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = getFixedPointStep(NES_CPU_NTSC, DS_SOUND_FREQUENCY, CPS_SHIFT);
 }
 
 void __fastcall VRC6SoundSawReset(VRC6_SAW *ch)
 {
 	// There's no VRC6 PAL titles, always set this to NTSC
-	ch->cps = getFixedPointStep(NES_CPU_NTSC, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = getFixedPointStep(NES_CPU_NTSC, DS_SOUND_FREQUENCY, CPS_SHIFT);
 }
 
 static NES_RESET_HANDLER s_vrc6_reset_handler[] =

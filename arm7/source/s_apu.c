@@ -844,15 +844,15 @@ void apuSoundWrite(Uint address, Uint value)
 			// Timer Low ($400A)	
 			case APU_TRI_TIMER_L:
 			{
-				apu.triangle.wl &= 0x0700; // Cleans lows, keeps highs (bits 8-10)
-    			apu.triangle.wl |= value;
+				apu.triangle.wl &= 0x0700 << CPS_SHIFT; // Cleans lows, keeps highs (bits 8-10)
+    			apu.triangle.wl |= value << CPS_SHIFT;
 				break;
 			}
 			// Length counter load, timer high, set linear counter reload flag ($400B)
 			case APU_TRI_TIMER_H:
 			{
-				apu.triangle.wl &= 0x00FF; // Cleans highs, keeps lows (bits 8-10)
-				apu.triangle.wl |= (value & TRI_TIMER_HIGH_MASK) << 8;
+				apu.triangle.wl &= 0x00FF << CPS_SHIFT; // Cleans highs, keeps lows (bits 8-10)
+				apu.triangle.wl |= ((value & TRI_TIMER_HIGH_MASK) << 8) << CPS_SHIFT;
 				// Loads Length Counter from the table
 				apu.triangle.lc.counter = vbl_length_table[value >> 3];
 				apu.triangle.li.tocount = 1; // Spec: "Secondary effect: Sets the linear counter reload flag"
@@ -878,7 +878,7 @@ void apuSoundWrite(Uint address, Uint value)
 			// Loop noise/period ($400E)
 			case APU_NOISE_PERIOD:
 			{
-				apu.noise.wl = (noise_time_period_table[value & NOISE_VOLUME_MASK]);
+				apu.noise.wl = (noise_time_period_table[value & NOISE_VOLUME_MASK]) << CPS_SHIFT;
 				apu.noise.rngshort = value & NOISE_MODE;
 				break;
 			}
@@ -897,7 +897,7 @@ void apuSoundWrite(Uint address, Uint value)
 			// IRQ enable, loop, freq ($4010)
 			case APU_DMC_CTRL:
 			{
-			    apu.dpcm.wl = dpcm_freq_table[value & DMC_RATE_MASK];
+			    apu.dpcm.wl = (dpcm_freq_table[value & DMC_RATE_MASK]) << CPS_SHIFT;
 				apu.dpcm.loop_enable = value & DMC_LOOP;
 				apu.dpcm.irq_enable = value & DMC_IRQ_ENABLE;
 				if (!apu.dpcm.irq_enable)
@@ -954,20 +954,20 @@ void apuSoundWrite(Uint address, Uint value)
 					apu.noise.lc.counter = 0;
 				}
 				// DMC
-                if (value & 0x10) 
+                if (value & APU_CH_DMC)
 				{
-                    if (!apu.dpcm.key || apu.dpcm.length == 0) 
+                    if (!apu.dpcm.key || apu.dpcm.length == 0) // If not active or sample has ended
 					{
                         apu.dpcm.key = 1;
-                        nesApuSoundDmcStart(&apu.dpcm);
+                        nesApuSoundDmcStart(&apu.dpcm); // Process DCM data
                     }
                 } 
 				else 
 				{
                     apu.dpcm.key = 0;
-                    apu.dpcm.length = 0;
+                    apu.dpcm.length = 0; // Stops the sample immediately
                 }
-                apu.dpcm.irq_report = 0;
+                apu.dpcm.irq_report = 0; // Clean the IRQ flag when writing to $4015
                 break;
 			}
 			// Frame Counter ($4017)	
