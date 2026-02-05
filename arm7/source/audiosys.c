@@ -5,8 +5,6 @@
 /*  Audio Render Handler  */
 /* ---------------------- */
 
-Uint frequency = DS_SOUND_FREQUENCY;
-
 // APU mixer status flags
 enum apuRegion apuCurrentRegion = NTSC;
 enum pulseCycles pulseCurrentStatus = Normal;
@@ -39,16 +37,6 @@ static void NESAudioHandlerInstallOne(NES_AUDIO_HANDLER *ph)
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph)
 {
 	for (;(ph->fMode&2)?(!!ph->Proc2):(!!ph->Proc);ph++) NESAudioHandlerInstallOne(ph);
-}
-
-void NESAudioFrequencySet(Uint freq)
-{
-	frequency = freq;
-}
-
-Uint NESAudioFrequencyGet(void)
-{
-	return frequency;
 }
 
 enum pulseMode getPulseMode()

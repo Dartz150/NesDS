@@ -53,8 +53,6 @@ void apuVblankSync();
 void APU4015Reg(void);
 void apuSoundInstall(void);
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph);
-void NESAudioFrequencySet(Uint freq);
-Uint NESAudioFrequencyGet(void);
 Uint32 getFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
 void applyApuStateMask(u32 mask);
 

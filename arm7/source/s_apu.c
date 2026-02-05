@@ -377,7 +377,7 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, int ds_chan, int pan)
     }
 
 	// Convert wavelenght, duty and volume parameters to the DS PSG hardware channel
-    u16 ds_wl 	 = nesToDsTimer(ch->wl, cache_is_pal);
+	Uint32 ds_wl = nesToDsTimer(ch->wl, cache_is_pal);
     u32 ds_duty  = nesDutyToDs(ch->duty);
     u8 volume    = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
     u8 ds_vol    = volume << 1; 
