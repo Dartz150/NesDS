@@ -76,10 +76,6 @@ static s16 buffer_L[MIXBUFSIZE * 2] ALIGN(32);
 static s16 buffer_R[MIXBUFSIZE * 2] ALIGN(32);
 static int16_t delay_line[STEREO_DELAY_SIZE] ALIGN(32);
 
-// Sound Expansion flags
-static bool has_vrc6 = false;
-static bool has_fds  = false;
-
 // Sound status flags
 static int delay_ptr = 0;
 static int APU_paused = 0;
@@ -88,13 +84,13 @@ static int chan = 0;
 // Resets the APU emulation to avoid garbage sounds
 void resetApu()
 {
-	NESReset();
-	IPC_APUW = 0;
-	IPC_APUR = 0;
 	// Only detect expansions once per reset
     const int mapper = IPC_MAPPER;
     has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
     has_fds  = (mapper == 20 || mapper == 256);
+	NESReset();
+	IPC_APUW = 0;
+	IPC_APUR = 0;
 }
 
 // https://github.com/Gericom/GBARunner3/blob/develop/code/core/arm7/source/Sound/GbaSound7.c#L50

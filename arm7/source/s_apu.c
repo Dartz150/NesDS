@@ -128,7 +128,6 @@ typedef struct
 	Uint32 length;			/* bit length */
 	Uint32 mastervolume;
 	Uint32 adr;				/* current address */
-	Uint32 pcm_ptr;         /*Current IPC_PCMDATA position*/ //TODO:Render RAW PCM properly
 	Int32 dacout;
 	Int32 dacout0;
 	Uint8 start_length;
@@ -769,10 +768,8 @@ Int32 nesApuSoundDmcRender1(u32 flags)
 
 void apuSoundWrite(Uint address, Uint value)
 {
-	int mapper = IPC_MAPPER;
-
 	// NES APU REGISTERS ($4000 ~ $4017)
-	if (APU_PULSE1_CTRL <= address && address <= APU_FRAME_COUNTER)
+	if (address < 0x4018)
 	{
 	    apu.regs[address - APU_PULSE1_CTRL] = value;
         switch (address)
@@ -781,17 +778,16 @@ void apuSoundWrite(Uint address, Uint value)
 			case APU_PULSE1_CTRL:
 			case APU_PULSE2_CTRL:
 			{
-				int ch = (address >= APU_PULSE2_CTRL);
+				int ch = (address >> 2) & 1;
 				// VVVV: Constant volume / Envelope Rate
 				apu.square[ch].ed.volume = value & PULSE_VOLUME_MASK;
 				apu.square[ch].ed.rate   = value & PULSE_VOLUME_MASK;
 				// C: Constant Volume flag
-				apu.square[ch].ed.disable = (value & PULSE_ENV_CONST_VOL) ? 1 : 0;
+				apu.square[ch].ed.disable = (value >> 4) & 1; // PULSE_ENV_CONST_VOL
 				// L: Halt length counter / Envelope Loop
 				// IMPORTANT: This bit has a double function
-				apu.square[ch].lc.clock_disable = (value & PULSE_ENV_LOOP) ? 1 : 0;
-				apu.square[ch].ed.looping_enable = (value & PULSE_ENV_LOOP) ? 1 : 0;
-				
+				apu.square[ch].lc.clock_disable = (value >> 5) & 1; // PULSE_ENV_LOOP
+				apu.square[ch].ed.looping_enable = (value >> 5) & 1; // PULSE_ENV_LOOP
 				// Load the Duty Cycle from the table
 				apu.square[ch].duty = square_duty_table[value >> 6];
 				break;
@@ -801,9 +797,9 @@ void apuSoundWrite(Uint address, Uint value)
 			case APU_PULSE2_SWEEP:
 			{
 				int ch = (address >= APU_PULSE2_CTRL);
-				apu.square[ch].sw.active    = (value & PULSE_SWEEP_ENABLE) ? 1 : 0;
+				apu.square[ch].sw.active    = (value >> 7); // PULSE_SWEEP_ENABLE
 				apu.square[ch].sw.rate      = (value >> 4) & 7; // Bits 4-6 are the period
-				apu.square[ch].sw.direction = (value & PULSE_SWEEP_NEGATE) ? 1 : 0;
+				apu.square[ch].sw.direction = (value >> 3) & 1; // PULSE_SWEEP_NEGATE
 				apu.square[ch].sw.shifter   = value & PULSE_SWEEP_SHIFT;
 				// Spec: Writing here marks the sweep for reload.
 				apu.square[ch].sw.timer = 0; 
@@ -813,21 +809,18 @@ void apuSoundWrite(Uint address, Uint value)
 			case APU_PULSE1_TIMER_L:
 			case APU_PULSE2_TIMER_L:
 			{
-				int ch = address >= APU_PULSE2_CTRL;
-				apu.square[ch].wl &= PULSE_TIMER_LOW;
-				apu.square[ch].wl += value;
+				int ch = (address >> 2) & 1; // APU_PULSE2_CTRL
+				apu.square[ch].wl = (apu.square[ch].wl & 0xFF00) | value; //PULSE_TIMER_LOW;
 				break;
 			}
-			// Timer High ($4003 / $4007)
+			// Timer High + LC Load ($4003 / $4007)
 			case APU_PULSE1_TIMER_H:
 			case APU_PULSE2_TIMER_H:
 			{
-				int ch = (address >= APU_PULSE2_CTRL);
-				
+				int ch = (address >> 2) & 1;
 				// Update timer (Wavelength)
 				// We use timer high (bits 0-2) and preserve timer low
-				apu.square[ch].wl &= PULSE_TIMER_RESERVE;
-				apu.square[ch].wl |= (value & PULSE_TIMER_HIGH) << 8;
+				apu.square[ch].wl = (apu.square[ch].wl & 0x00FF) | ((value & 7) << 8); // PULSE_TIMER_HIGH
 				// Load the Length Counter from the table
 				// If status bit (4015) is enabled for this channel, load it.
 				apu.square[ch].lc.counter = (vbl_length_table[value >> 3]);
@@ -934,59 +927,48 @@ void apuSoundWrite(Uint address, Uint value)
 			// Status ($4015)
 			// Write/Read ($4015)
 			case APU_STATUS:
-			{
-				if (value & APU_CH_PULSE1)
+            {
+				// Pulse 1
+                apu.square[0].key = (value & 1);
+                if (!apu.square[0].key)
 				{
-					apu.square[0].key = 1;
-				}
-				else
-				{
-					apu.square[0].key = 0;
 					apu.square[0].lc.counter = 0;
 				}
-				if (value & APU_CH_PULSE2)
+				// Pulse 2
+                apu.square[1].key = (value >> 1) & 1;
+                if (!apu.square[1].key)
 				{
-					apu.square[1].key = 1;
+ 					apu.square[1].lc.counter = 0;
 				}
-				else
+				// Triangle
+                apu.triangle.key = (value >> 2) & 1;
+                if (!apu.triangle.key)
 				{
-					apu.square[1].key = 0;
-					apu.square[1].lc.counter = 0;
-				}
-				if (value & APU_CH_TRIANGLE)
+                    apu.triangle.lc.counter = 0;
+                    apu.triangle.li.counter = 0;
+                }
+				// Noise
+                apu.noise.key = (value >> 3) & 1;
+                if (!apu.noise.key)
 				{
-					apu.triangle.key = 1;
-				}
-				else
-				{
-					apu.triangle.key = 0;
-					apu.triangle.lc.counter = 0;
-					apu.triangle.li.counter = 0;
-				}
-				if (value & APU_CH_NOISE)
-				{
-					apu.noise.key = 1;
-				}
-				else
-				{
-					apu.noise.key = 0;
 					apu.noise.lc.counter = 0;
 				}
-				if (value & APU_CH_DMC)
+				// DMC
+                if (value & 0x10) 
 				{
-					if (!apu.dpcm.key || apu.dpcm.length == 0) // If not active or sample has ended
+                    if (!apu.dpcm.key || apu.dpcm.length == 0) 
 					{
-						apu.dpcm.key = 1;
-						nesApuSoundDmcStart(&apu.dpcm); // Process DCM data
-					}
-				}
-				else
+                        apu.dpcm.key = 1;
+                        nesApuSoundDmcStart(&apu.dpcm);
+                    }
+                } 
+				else 
 				{
-					apu.dpcm.key = 0;
-					apu.dpcm.length = 0;    // Stops the sample immediately
-				}
-				apu.dpcm.irq_report = 0;    // Clean the IRQ flag when writing to $4015
-				break;
+                    apu.dpcm.key = 0;
+                    apu.dpcm.length = 0;
+                }
+                apu.dpcm.irq_report = 0;
+                break;
 			}
 			// Frame Counter ($4017)	
 			case APU_FRAME_COUNTER:
@@ -1002,115 +984,101 @@ void apuSoundWrite(Uint address, Uint value)
 				break;
 			}
 		}
+		return;
 	}
 	// FDS (FAMICOM DISK SYSTEM ADDITIONAL CHANNEL) TODO: REFACTOR WITH CASES
-	else if (FDS_BASE <= address && address < FDS_END && (mapper == 20 || mapper == 256)) 
+	if (has_fds && address >= FDS_BASE && address < FDS_END) 
 	{
 		FDSSoundWrite(address, value);
 	}
 	// VRC6 (KONAMI SOUND CHIP)
-	else if (address >= VRC6_MIN_BASE)
+	else if (has_vrc6 && address >= VRC6_MIN_BASE)
 	{
-    	if (mapper == 24 || mapper == 26)
-    	{
-			switch (address & 0xF000)
+		switch (address & 0xF000)
+		{
+			// Pulse Control ($9000,$A000)
+			case VRC6_PULSE1_CTRL:
 			{
-				// Pulse Control ($9000,$A000)
-				case VRC6_PULSE1_CTRL:
+				if (address < 0x9003)
 				{
-					if (address < 0x9003)
-					{
-						VRC6SoundWrite9000(address, value);
-					}
-					break;
+					VRC6SoundWrite9000(address, value);
 				}
-				case VRC6_PULSE2_CTRL:
-				{
-					if (address < 0xA003)
-					{
-						VRC6SoundWriteA000(address, value);
-					}
-					break;
-				}
-				// Saw Accum Rate ($B000)
-				case VRC6_SAW_RATE:
-				{
-					if (address < 0xB003)
-					{
-						VRC6SoundWriteB000(address, value);
-					}
-					break;
-				}
+				break;
 			}
-    	}
+			case VRC6_PULSE2_CTRL:
+			{
+				if (address < 0xA003)
+				{
+					VRC6SoundWriteA000(address, value);
+				}
+				break;
+			}
+			// Saw Accum Rate ($B000)
+			case VRC6_SAW_RATE:
+			{
+				if (address < 0xB003)
+				{
+					VRC6SoundWriteB000(address, value);
+				}
+				break;
+			}
+		}
 	}
 }
 
-// Needs review (i don't know what this actually does)
+// ($4015) Channel enable and length counter status
 void __fastcall APU4015Reg()
 {
-	static int oldkey = 0;
-	int key = 0;
-	if (apu.square[0].key && apu.square[0].lc.counter)
-	{
-		key |= APU_CH_PULSE1;
-	}
-	if (apu.square[1].key && apu.square[1].lc.counter) 
-	{
-		key |= APU_CH_PULSE2;
-	}
-	if (apu.triangle.key && apu.triangle.lc.counter && apu.triangle.li.counter)
-	{
-		key |= APU_CH_TRIANGLE;
-	}
-	if (apu.noise.key && apu.noise.lc.counter) 
-	{
-		key |= APU_CH_NOISE;
-	}
-	if (apu.dpcm.length) 
-	{
-		key |= APU_CH_DMC;
-	}
-	
-	key = key | APU_STATUS_FRAME_IRQ | apu.dpcm.irq_report;
-	if (oldkey != key || apuirq) 
-	{
-		IPC_REG4015 = key;
-		IPC_APUIRQ = apuirq;
-		oldkey = key;
-		apuirq = 0;
-	}
+    static int oldkey = 0;
+    
+    // Evaluate channels status using bools instead
+    int p1 = (apu.square[0].key && apu.square[0].lc.counter);
+    int p2 = (apu.square[1].key && apu.square[1].lc.counter);
+    int tri = (apu.triangle.key && apu.triangle.lc.counter && apu.triangle.li.counter);
+    int noi = (apu.noise.key    && apu.noise.lc.counter);
+    int dmc = (apu.dpcm.length > 0);
+
+    // Construct the key
+    // p1 is bit 0, p2 is bit 1...
+    int key = p1 | (p2 << 1) | (tri << 2) | (noi << 3) | (dmc << 4);
+    
+    // Add interrupt flags
+    key |= APU_STATUS_FRAME_IRQ | apu.dpcm.irq_report;
+
+    // Only update IPC if something really changed or there are pending irqs
+    if (oldkey != key || apuirq) 
+    {
+        IPC_REG4015 = key;
+        IPC_APUIRQ = apuirq;
+        oldkey = key;
+        apuirq = 0;
+    }
 }
 
-static void nesApuSoundPulseReset(NESAPU_SQUARE *ch)
+static void nesApuSoundPulseReset(NESAPU_SQUARE *ch, u32 cps)
 {
-	XMEMSET(ch, 0, sizeof(NESAPU_SQUARE));
+	memset(ch, 0, sizeof(NESAPU_SQUARE));
 	nesApuSoundPulseHwStop();
-	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	ch->cps = cps;
 }
 
-static void nesApuSoundTriangleReset(NESAPU_TRIANGLE *ch)
+static void nesApuSoundTriangleReset(NESAPU_TRIANGLE *ch, u32 cps)
 {
-	XMEMSET(ch, 0, sizeof(NESAPU_TRIANGLE));
-	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	memset(ch, 0, sizeof(NESAPU_TRIANGLE));
+	ch->cps = cps;
 }
 
-static void nesApuSoundNoiseReset(NESAPU_NOISE *ch)
+static void nesApuSoundNoiseReset(NESAPU_NOISE *ch, u32 cps)
 {
-	XMEMSET(ch, 0, sizeof(NESAPU_NOISE));
-	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
+	memset(ch, 0, sizeof(NESAPU_NOISE));
+	ch->cps = cps;
 	ch->rng = 1;
 }
 
-static void nesApuSoundDmcReset(NESAPU_DPCM *ch)
+static void nesApuSoundDmcReset(NESAPU_DPCM *ch, u32 cps)
 {
-	XMEMSET(ch, 0, sizeof(NESAPU_DPCM));
-	int apu_region = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
-	ch->cps = getFixedPointStep(apu_region, NESAudioFrequencyGet(), CPS_SHIFT);
-	ch->pcm_ptr = 0;
+	memset(ch, 0, sizeof(NESAPU_DPCM));
+	ch->cps = cps;
 }
 
 // Update APU Status flags only when the APU resets
@@ -1127,32 +1095,43 @@ static void apuSyncConfigCache(void)
 
 static void __fastcall apuSoundReset(void)
 {
+	// Set APU flags
 	apuSyncConfigCache();
+
 	int cpu_clock = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
-	Uint i;
-	nesApuSoundPulseReset(&apu.square[0]);
-	nesApuSoundPulseReset(&apu.square[1]);
-	nesApuSoundTriangleReset(&apu.triangle);
-	nesApuSoundNoiseReset(&apu.noise);
-	nesApuSoundDmcReset(&apu.dpcm);
-	apu.cpf[1] = getFixedPointStep(cpu_clock, (cache_is_pal) ? 200 : 240, CPS_SHIFT);
+
+	u32 cycles_per_sample = getFixedPointStep(cpu_clock, NESAudioFrequencyGet(), CPS_SHIFT);
+
+	// Configure every APU channel
+	nesApuSoundPulseReset(&apu.square[0], cycles_per_sample);
+	nesApuSoundPulseReset(&apu.square[1], cycles_per_sample);
+	nesApuSoundTriangleReset(&apu.triangle, cycles_per_sample);
+	nesApuSoundNoiseReset(&apu.noise, cycles_per_sample);
+	nesApuSoundDmcReset(&apu.dpcm, cycles_per_sample);
+
+	// Configure Cycles per frame
+	u32 frame_rate = (cache_is_pal) ? 200 : 240;
+	apu.cpf[1] = getFixedPointStep(cpu_clock, frame_rate, CPS_SHIFT);
 	apu.cpf[2] = getFixedPointStep(cpu_clock, (cache_is_pal) ? 200 * 4 / 5 : 240 * 4 / 5, CPS_SHIFT);
+
 	apu.cpf[0] = apu.cpf[1];
+
+	// Configure cycles pointers
+	Uint32 *base_cpf = &apu.cpf[0];
 	apu.square[1].sw.ch = 1;
-	apu.square[0].cpf = &apu.cpf[0];
-	apu.square[1].cpf = &apu.cpf[0];
-	apu.triangle.cpf = &apu.cpf[0];
-	apu.noise.cpf = &apu.cpf[0];
+	apu.square[0].cpf = base_cpf;
+    apu.square[1].cpf = base_cpf;
+    apu.triangle.cpf  = base_cpf;
+    apu.noise.cpf     = base_cpf;
 	apu.triangle.li.cpf = apu.cpf[1];
 
-	for (i = 0; i <= 0x17; i++)
+	for (int i = 0; i <= 0x17; i++)
 	{
 		apuSoundWrite(0x4000 + i, (i == 0x10) ? 0x10 : 0x00);
 	}
+
 	apuSoundWrite(0x4015, 0x0f);
-#if 1
 	apu.dpcm.first = 1;
-#endif
 }
 
 static NES_RESET_HANDLER s_apu_reset_handler[] = {

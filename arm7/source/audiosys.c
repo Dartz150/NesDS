@@ -12,6 +12,9 @@ enum apuRegion apuCurrentRegion = NTSC;
 enum pulseCycles pulseCurrentStatus = Normal;
 enum pulseMode CurrentPulseMode = PULSE_CH_SW;
 bool stereo_enhanced = true;
+// Sound Expansion flags
+bool has_vrc6 = false;
+bool has_fds  = false;
 
 static NES_AUDIO_HANDLER *nah = 0;
 // ARM7 side APU status flags

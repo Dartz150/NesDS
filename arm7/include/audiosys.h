@@ -65,8 +65,11 @@ enum pulseMode getPulseMode();
 extern enum apuRegion apuCurrentRegion; // Set Flag for the APU settings to match PAL Sound Frequency
 extern enum pulseCycles pulseCurrentStatus; // SWAP DUTY CYCLES
 extern enum pulseMode CurrentPulseMode; // Change pulse 1/2 renderer
+
 extern bool stereo_enhanced;
 extern u32 apu_internal_state;
+extern bool has_vrc6;
+extern bool has_fds;
 
 #ifdef __cplusplus
 }
