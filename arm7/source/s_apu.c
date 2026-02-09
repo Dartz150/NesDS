@@ -12,8 +12,9 @@
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
-#define NES_APU_SQUARE_1_CH  8
-#define NES_APU_SQUARE_2_CH  9
+// PSG Hardware Pulse Render Defines
+#define NES_APU_SQUARE_1_CH  DS_PSG_CH8
+#define NES_APU_SQUARE_2_CH  DS_PSG_CH9
 #define SQUARE_PAN_1_CH      60
 #define SQUARE_PAN_2_CH      68
 
@@ -285,15 +286,14 @@ __inline static void sweepStep(SWEEP *sw, Uint32 *wl)
 	}
 }
 
-__inline static u16 nesToDsTimer(Uint32 nes_wl, bool is_pal)
+__inline static u16 nesToDsTimer(Uint32 nes_wl, Uint32 nes_apu_clock)
 {
     uint64_t bus_clock = DS_BUS_CLOCK / 2; // Sound hardware runs at half the DS Bus Clock
-    uint64_t cpu_clock = is_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     
     // (bus_clock * nes_divisor) / (cpu_clock * psg_ds_steps)
     // (bus_clock * 16) / (cpu_clock * 8) -> (bus_clock * 2) / cpu_clock
 
-    uint32_t ratio = (bus_clock * 2 * (nes_wl + 1)) / cpu_clock;
+    uint32_t ratio = (bus_clock * 2 * (nes_wl + 1)) / nes_apu_clock;
 
     if (ratio >= 65535)
 	{
@@ -320,86 +320,68 @@ __inline static u32 nesDutyToDs(u8 duty_value)
     }
 }
 
-/**
- * *NOTE (DS Hardware PSG Channel):
- * A 2-iteration loop is utilized here as a "cadence hack" for timing. 
- * Extensive testing revealed that using a 'while' loop like we do in the 
- * software pulse renderer, causes the DS PSG hardware to glitch, resulting in 
- * static, monotonic tone sweeps.
- * * This design distributes APU cycles across the 60Hz video frame as follows:
- * - Envelope Decay: 2 steps * 60Hz = 120Hz (Balanced compromise).
- * - Sweep: 1 step (even phase) * 60Hz = 60Hz.
- * - Length Counter: 1 step per call = 60Hz.
- * * While not a 1:1 mathematical match for the NES Frame Counter, this configuration provides 
- * the best fidelity on DS hardware.
- */
-static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, int ds_chan, int pan)
+/// @brief Generates and updates a pulse wave using the Nintendo DS PSG hardware channel.
+/// @param ch      Pointer to the NES square channel state structure.
+/// @param ds_chan Nintendo DS hardware channel index used for PSG output.
+///                Valid range: 9 to 15 (only these channels support PSG mode).
+/// @param pan     Stereo panning value (0 = full left, 64 = center, 127 = full right).
+static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, DS_PSG_Channel ds_chan, int pan)
 {
-	// TIMING LOGIC ("Cadence" hack)
-	// Frame Counter and sequencer (Envelopes, Sweeps, Length)
-	if (ch->fp & 1)
-	{
-		lengthCounterStep(&ch->lc);       // 60Hz
-	}
-	// Sub-cycle loop to provide higher resolution for Envelopes and Sweeps
-	for (int i = 0; i < 2; i++)
-	{
-		if (!(ch->fp & 1))
-		{
-			sweepStep(&ch->sw, &ch->wl);  // ~120Hz
-		}
-		
-		envelopeDecayStep(&ch->ed);      // ~240Hz
-		ch->fp++;
-	}
-
-    // Calculate target wavelength to handle Sweep
-    Uint32 sweep_target = ch->wl;
-    if (ch->sw.active && ch->sw.shifter > 0)
-	{
-        if (ch->sw.direction)
-		{
-			sweep_target -= (sweep_target >> ch->sw.shifter);
-		}
-        else
-		{
-			sweep_target += (sweep_target >> ch->sw.shifter);
-		}
+    uint32_t nes_apu_clock = cache_is_pal ? NES_CPU_PAL : NES_CPU_NTSC;
+    
+    // Frame Counter and sequencer (Envelopes, Sweeps, Length)
+    ch->fc += nes_apu_clock;
+    int cycles_per_frame_step = *(ch->cpf);
+    if (ch->fc >= cycles_per_frame_step) 
+    {
+        ch->fc = 0; 
+        if (ch->fp & 1) lengthCounterStep(&ch->lc);      // ~60Hz
+        if (!(ch->fp & 1)) sweepStep(&ch->sw, &ch->wl);  // ~120Hz
+        envelopeDecayStep(&ch->ed);      // ~240Hz
+        u32 ds_wl = nesToDsTimer(ch->wl, nes_apu_clock);
+        REG_SOUNDxTMR(ds_chan) = ds_wl; // We need to update the DS timer here too
+        ch->fp++;
     }
 
+    // Calculate target wavelength to handle Sweep
+    u32 delta_wl = ch->wl >> ch->sw.shifter;
+    u32 sweep_target = ch->wl;
+    if (ch->sw.direction)
+    {
+        sweep_target -= delta_wl;
+        if (ch == &apu.square[0] && sweep_target > 0) sweep_target--; 
+    }
+    else
+    {
+        sweep_target += delta_wl;
+    }
     // Immediate silence if wavelength is out of range, length counter is zero, or key is off
-    bool is_silenced = (ch->wl < 8 || sweep_target > 0x7FF || ch->lc.counter == 0 || !ch->key);
+    bool is_silenced = (ch->wl < 8 || sweep_target > 0x7FF || ch->lc.counter == 0 || !ch->key || ch->mute);
 
     if (is_silenced) 
-	{
+    {
         if (snd_isChannelPlaying(ds_chan)) snd_stopChannel(ds_chan);
         return;
     }
 
-	// Convert wavelenght, duty and volume parameters to the DS PSG hardware channel
-	Uint32 ds_wl = nesToDsTimer(ch->wl, cache_is_pal);
-    u32 ds_duty  = nesDutyToDs(ch->duty);
-    u8 volume    = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
-    u8 ds_vol    = volume << 1; 
+    // Convert wavelenght, duty and volume parameters to the DS PSG hardware channel
+    u32 ds_duty = nesDutyToDs(ch->duty);
+    u8  volume  = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
+    u8  ds_vol  = volume << 1; 
 
-    if (!snd_isChannelPlaying(ds_chan)) 
-	{
-		// PSG channel Enable/Update
-        REG_SOUNDxTMR(ds_chan) = ds_wl;
+    if (!snd_isChannelPlaying(ds_chan))
+    {
+        REG_SOUNDxTMR(ds_chan) = nesToDsTimer(ch->wl, nes_apu_clock);
         REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PSG | 
-                                 SOUNDCNT_MODE_LOOP | ds_duty | 
-                                 SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
-    } 
-	else 
-	{
-        // If channel is already active, update Frequency ALWAYS for smooth Sweeps
-        REG_SOUNDxTMR(ds_chan) = ds_wl;
-
-        // Update Volume and Duty ONLY if they changed to prevent audio popping/artifacts
+            SOUNDCNT_MODE_LOOP | ds_duty | 
+            SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
+    }
+    else
+    {
         u32 current_cnt = REG_SOUNDxCNT(ds_chan);
         u32 new_cnt = (current_cnt & ~(0x7F | SOUNDCNT_DUTY_MASK)) | ds_vol | ds_duty;
-        if (current_cnt != new_cnt) 
-		{
+        if (current_cnt != new_cnt)
+        {
             REG_SOUNDxCNT(ds_chan) = new_cnt;
         }
     }

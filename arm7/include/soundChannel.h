@@ -150,6 +150,17 @@ static inline void snd_setChannelDuty(u32 channel, u32 duty)
     REG_SOUNDxCNT(channel) = (REG_SOUNDxCNT(channel) & ~SOUNDCNT_DUTY_MASK) | duty;
 }
 
+typedef enum {
+    DS_PSG_CH8  = 8,
+    DS_PSG_CH9  = 9,
+    DS_PSG_CH10 = 10,
+    DS_PSG_CH11 = 11,
+    DS_PSG_CH12 = 12,
+    DS_PSG_CH13 = 13,
+    DS_PSG_CH14 = 14,
+    DS_PSG_CH15 = 15
+} DS_PSG_Channel;
+
 #ifdef __cplusplus
 }
 
