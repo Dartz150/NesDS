@@ -36,6 +36,8 @@ extern "C" {
 // Total Samples the DS generates exactly in one frame
 #define SAMPLES_PER_DS_FRAME           (DS_SOUND_FREQUENCY / (DS_BUS_CLOCK / NDS_CYCLES_PER_FRAME))
 
+#define MIXBUFSIZE        (1 << 7)
+
 // struct unused yet
 enum AudioFilterType
 {
@@ -47,21 +49,14 @@ enum AudioFilterType
    NES_AUDIO_FILTER_OLDTV
 };
 
-
-// Pulse Channels 1 and 2 Software renderers
-Int32 nesApuSoundPulseRender1(u32 flags);
-Int32 nesApuSoundPulseRender2(u32 flags);
-
 // Pulse Channels 1 and 2 Hardware renderers
 // PSG channel writes change the sound INSTANTLY. 
 // Always call this after the software sound renderers to avoid sound latency.
 void nesApuSoundPulseHwRender(u32 flags);
 void nesApuSoundPulseHwStop();
 
-//Triangle/Noise/DMC Channels ("TND")
-Int32 nesApuSoundTriangleRender1(u32 flags);
-Int32 nesApuSoundNoiseRender1(u32 flags);
-Int32 nesApuSoundDmcRender1(u32 flags);
+// Bip Buffer processes all the APU channels now
+void nesApuProcessBlipBufferChannels(int sample_count, u32 apu_flags);
 void apuSoundInstall();
 void FDSSoundInstall();
 void readApu();

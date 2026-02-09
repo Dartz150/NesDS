@@ -1,5 +1,4 @@
 #include "handler.h"
-#include "nsf6502.h"
 
 /* --------------- */
 /*  Reset Handler  */

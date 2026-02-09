@@ -1,6 +1,8 @@
 #ifndef S_APU_H__
 #define S_APU_H__
 
+#include "blip_buf.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -8,6 +10,9 @@ extern "C" {
 void APUSoundInstall(void);
 void APU4015Reg(void);
 void APUSoundWrite(Uint address, Uint value);
+
+// Blip Buffer Shared Buffer
+extern int16_t blip_buf[MIXBUFSIZE];
 
 #ifdef __cplusplus
 }

@@ -2,8 +2,6 @@
 #include "nestypes.h"
 #include "audiosys.h"
 #include "handler.h"
-#include "nsf6502.h"
-#include "nsdout.h"
 #include "s_fds.h"
 
 // (:::) FDS AUDIO ENGINE (:::) //

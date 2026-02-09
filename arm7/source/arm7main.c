@@ -9,14 +9,7 @@
 #include "s_vrc6.h"
 #include "s_fds.h"
 
-#define MIXBUFSIZE        (1 << 8)
-#define STEREO_DELAY_SIZE 256 // 15ms @ 32kHz
-/*
- * DS Hardware Constants (from No$gba DS Sound docs: Channel/Mixer Bit-Widths section)
- * DS expects signed 16-bit PCM (SOUNDxCNT Format=1: PCM16, range -32768 to +32767).
- * We center post-mixer to bipolar for full dynamic range.
- */
-#define DC_OFFSET         16384  // Half of 32768: Centers unipolar NES output (0-32767) to bipolar (-16384 to +16383).
+// DS Hardware Defines
 
 // RIGHT CHANNEL
 #define RIGHT_CHANNEL     0
@@ -32,49 +25,12 @@
 // - https://problemkaputt.de/gbatek.htm#dssound
 // - https://stackoverflow.com/questions/14997850/fir-filter-implementation-in-c-programming
 
-// NES APU Mixer Lookup Tables
-// Pulse table: For sum of two pulse channels (0-30 unipolar levels).
-// Derived from: 95.52 / (8128.0 / n + 100) for n=1..30, scaled to 0-32767 (Q15 unipolar).
-static const int16_t pulse_table[31] =
-{
-    0, 380, 752, 1114, 1468, 1814, 2152, 2482, 2805, 3120,
-    3429, 3731, 4027, 4316, 4599, 4876, 5148, 5414, 5675, 5930,
-    6181, 6426, 6667, 6903, 7135, 7363, 7586, 7805, 8020, 8231,
-    8438
-};
-
-// TND table: For weighted sum of triangle/noise/DMC (0-202 unipolar equivalent levels).
-// Approximated from: 163.67 / (24329.0 / n + 100) for n=1..202, scaled to 0-32767.
-// Weights (3*tri + 2*noi + dmc)
-static const int16_t tnd_table[203] =
-{
-    0, 220, 437, 653, 867, 1080, 1291, 1500, 1707, 1913,
-    2117, 2320, 2521, 2720, 2918, 3115, 3309, 3503, 3695, 3885,
-    4074, 4261, 4448, 4632, 4816, 4997, 5178, 5357, 5535, 5712,
-    5887, 6061, 6234, 6406, 6576, 6745, 6913, 7080, 7245, 7409,
-    7573, 7735, 7895, 8055, 8214, 8371, 8528, 8683, 8838, 8991,
-    9143, 9294, 9444, 9593, 9742, 9889, 10035, 10180, 10324, 10467,
-    10610, 10751, 10892, 11031, 11170, 11308, 11444, 11580, 11715, 11850,
-    11983, 12116, 12247, 12378, 12508, 12637, 12766, 12893, 13020, 13146,
-    13271, 13396, 13519, 13642, 13765, 13886, 14007, 14127, 14246, 14364,
-    14482, 14599, 14716, 14831, 14946, 15061, 15175, 15288, 15400, 15512,
-    15623, 15733, 15843, 15952, 16060, 16168, 16275, 16382, 16488, 16594,
-    16698, 16803, 16906, 17009, 17112, 17214, 17315, 17416, 17516, 17616,
-    17715, 17814, 17912, 18009, 18106, 18203, 18299, 18394, 18489, 18583,
-    18677, 18771, 18863, 18956, 19048, 19139, 19230, 19321, 19411, 19500,
-    19589, 19678, 19766, 19853, 19941, 20027, 20114, 20200, 20285, 20370,
-    20455, 20539, 20623, 20706, 20789, 20871, 20953, 21035, 21116, 21197,
-    21277, 21357, 21437, 21516, 21595, 21674, 21752, 21829, 21907, 21984,
-    22060, 22136, 22212, 22288, 22363, 22438, 22512, 22586, 22660, 22733,
-    22806, 22879, 22951, 23023, 23095, 23166, 23237, 23307, 23378, 23448,
-    23517, 23587, 23656, 23724, 23793, 23861, 23929, 23996, 24063, 24130,
-    24197, 24263, 24329
-};
-
 // DS Mixer buffers
 static s16 buffer_L[MIXBUFSIZE * 2] ALIGN(32);
 static s16 buffer_R[MIXBUFSIZE * 2] ALIGN(32);
-static int16_t delay_line[STEREO_DELAY_SIZE] ALIGN(32);
+
+// Blip Buffer
+int16_t blip_buf[MIXBUFSIZE] ALIGN(32);
 
 // Sound status flags
 static int delay_ptr = 0;
@@ -93,116 +49,32 @@ void resetApu()
 	IPC_APUR = 0;
 }
 
-// https://github.com/Gericom/GBARunner3/blob/develop/code/core/arm7/source/Sound/GbaSound7.c#L50
-// Clamps samples to a 16-bit range to prevent overflows in the DS mixer.
-__inline static int16_t clampSample16(int32_t inSample)
-{
-    // For a 16 bit range (-32768 to 32767)
-    int32_t outSample = inSample << 16;
-    if (inSample != (outSample >> 16))
-        outSample = 0x7FFFFFFF ^ (inSample >> 31);
-    return (int16_t)(outSample >> 16);
-}
-
-//Render the NES APU channels and emulate the NES APU mixer (NESDev wiki: APU Mixer).
-__inline static int32_t nesApuSoundRender(u32 flags) 
-{
-    int32_t pulse = 0;
-	// Pulse channels: Render via SW table or skip if using DS PSG Hardware
-    if (CurrentPulseMode == PULSE_CH_SW)
-	{
-        pulse = pulse_table[nesApuSoundPulseRender1(flags) + 
-							nesApuSoundPulseRender2(flags)];
-    }
-    // TND: Weighted sum of Triangle, Noise, and DMC (always Software)
-    int32_t tnd = tnd_table[(3 * nesApuSoundTriangleRender1(flags)) + 
-                           (2 * nesApuSoundNoiseRender1(flags)) + 
-                           nesApuSoundDmcRender1(flags)];
-    // Mix 2A03 APU
-    int32_t s_apu = pulse + tnd;
-
-	// Add Sound Expansions
-    if (has_vrc6)
-	{
-		s_apu += VRC6SoundRender(flags);
-	}
-	if (has_fds)
-	{
-		if (!(flags & APU_STAT_MUTE_FDS)) s_apu += FDSSoundRender();
-	}
-    return s_apu;
-}
-
-// Converts unipolar (0 to 32767) NES levels to bipolar (-16384 to 16383) DS PCM16 samples.
-// Centers the waveform to prevent artifacts in the DS mixer.
-__inline static int16_t nesToDsSample(int32_t raw_sample)
-{
-    int32_t mixed = ((raw_sample - DC_OFFSET) * 3) >> 1; // Apply linear gain (1.5x factor is the sweet spot).
-    return clampSample16(mixed);
-}
-
-// Applies sound post-processing
-__inline static void applySoundPostProcessing(int16_t sample, int16_t *outL, int16_t *outR, int *ptr) 
-{
-    if (!stereo_enhanced) 
-	{
-		// Normal mono sound
-        *outL = sample;
-        *outR = sample;
-        return;
-    }
-
-    // R Channel: Original Sample
-    *outR = sample;
-
-    // Obtain delayed sample for L
-	int current_ptr = *ptr;
-    int16_t delayed = delay_line[current_ptr];
-
-    // Store our current sample in the delay line
-    delay_line[current_ptr] = sample;
-    *ptr = (current_ptr + 1) & 0xFF;
-
-    // Phase inverted Channel L for a surround pseudo-stereo effect.
-    int32_t left_mix = sample - (delayed >> 1); // 50% vol
-    *outL = clampSample16(left_mix);
-}
-
+// blip_buf mixes everything, we no longer need to emulate the APU mixer or convert samples.
 void __fastcall soundMain(int chan)
 {
     if (APU_paused) return;
+    u32 flags = apu_internal_state; // APU Sound status flags (ARM7)
+    
+    // Render NES Sound frame. blip_buf already delivers centered PCM16 samples, prefect for the DS
+    nesApuProcessBlipBufferChannels(MIXBUFSIZE, flags);
 
-	u32 flags = apu_internal_state;
+    // Fill Buffers for the DS hardware (TODO: Handle filter and stereo using blip_buf)
     s16 *pcmL = &buffer_L[chan * MIXBUFSIZE];
     s16 *pcmR = &buffer_R[chan * MIXBUFSIZE];
-	int local_delay_ptr = delay_ptr;
+    memcpy(pcmL, blip_buf, MIXBUFSIZE * sizeof(s16));
+    memcpy(pcmR, blip_buf, MIXBUFSIZE * sizeof(s16));
 
-    for (int i = 0; i < MIXBUFSIZE; i++) 
+    // --- PSG PULSE HARDWARE IF ENABLED ---
+    if (CurrentPulseMode == PULSE_CH_HW) 
 	{
-        // Get NES sound samples
-        int32_t nes_sample = nesApuSoundRender(flags);
-
-        // Convert NES samples to PCM16
-        int16_t ds_sample = nesToDsSample(nes_sample);
-
-        // Apply post-processing effects and write to the audio buffers
-        applySoundPostProcessing(ds_sample, pcmL++, pcmR++, &local_delay_ptr);
+        nesApuSoundPulseHwRender(flags);
     }
-	delay_ptr = local_delay_ptr;
-
-    // Process Hardware PSG when enabled
-    if (CurrentPulseMode == PULSE_CH_HW)
-	{
-		nesApuSoundPulseHwRender(flags);
-	}
-	// Sync APU logic and registers
     readApu();
     APU4015Reg();
 }
 
 static void clearSoundBuffers(void)
 {
-    memset(delay_line, 0, sizeof(delay_line));
     memset(buffer_L, 0, sizeof(buffer_L));
     memset(buffer_R, 0, sizeof(buffer_R));
     delay_ptr = 0;
