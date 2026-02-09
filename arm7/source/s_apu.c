@@ -331,16 +331,20 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, DS_PSG_Channel ds_chan, 
     
     // Frame Counter and sequencer (Envelopes, Sweeps, Length)
     ch->fc += nes_apu_clock;
-    int cycles_per_frame_step = *(ch->cpf);
-    if (ch->fc >= cycles_per_frame_step) 
+    if (ch->fc >= *(ch->cpf))
     {
-        ch->fc = 0; 
-        if (ch->fp & 1) lengthCounterStep(&ch->lc);      // ~60Hz
-        if (!(ch->fp & 1)) sweepStep(&ch->sw, &ch->wl);  // ~120Hz
+        if (ch->fp & 1)
+        {
+            lengthCounterStep(&ch->lc);  // ~60Hz
+        }
+        if (!(ch->fp & 1))
+        {
+            sweepStep(&ch->sw, &ch->wl); // ~120Hz
+        }
         envelopeDecayStep(&ch->ed);      // ~240Hz
-        u32 ds_wl = nesToDsTimer(ch->wl, nes_apu_clock);
-        REG_SOUNDxTMR(ds_chan) = ds_wl; // We need to update the DS timer here too
+        REG_SOUNDxTMR(ds_chan) = nesToDsTimer(ch->wl, nes_apu_clock); // We need to update the DS timer here too
         ch->fp++;
+        ch->fc = 0;
     }
 
     // Calculate target wavelength to handle Sweep
