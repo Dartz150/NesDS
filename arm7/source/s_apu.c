@@ -305,6 +305,8 @@ __inline static u32 nesDutyToDs(u8 duty_value)
             return SOUNDCNT_DUTY_50_0;
         case 0x0C: // 12/16 steps = 75%
             return SOUNDCNT_DUTY_75_0;
+        default:
+            return SOUNDCNT_DUTY_12_5;
     }
 }
 
