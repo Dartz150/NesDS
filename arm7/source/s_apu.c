@@ -884,7 +884,7 @@ void nesApuProcessBlipBufferChannels(int sample_count, u32 apu_flags)
                 sweepStep(&apu.square[1].sw, &apu.square[1].wl);
             // 60Hz    
             }
-            else
+            if (step & 1)
             {
                 lengthCounterStep(&apu.square[0].lc);
                 lengthCounterStep(&apu.square[1].lc);
