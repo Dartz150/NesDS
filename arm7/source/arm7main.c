@@ -64,11 +64,6 @@ void __fastcall soundMain(int chan)
     memcpy(pcmL, blip_buf, MIXBUFSIZE * sizeof(s16));
     memcpy(pcmR, blip_buf, MIXBUFSIZE * sizeof(s16));
 
-    // --- PSG PULSE HARDWARE IF ENABLED ---
-    if (CurrentPulseMode == PULSE_CH_HW) 
-	{
-        nesApuSoundPulseHwRender(flags);
-    }
     readApu();
     APU4015Reg();
 }

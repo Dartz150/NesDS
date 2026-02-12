@@ -39,7 +39,6 @@ typedef struct
 typedef struct 
 {
 	Uint32 cpf;				/* cycles per frame (240Hz fix) */
-	Uint32 fc;				/* frame counter; */
 	Uint8 load;				/* length counter load register */
 	Uint8 start;			/* length counter start */
 	Uint8 counter;		    /* length counter */
@@ -78,11 +77,9 @@ typedef struct
 	SWEEP sw;
 	Uint32 mastervolume;
 	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
-	Uint32 fc;				/* frame counter; */
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint8 st;				/* wave step */
-	Uint8 fp;				/* frame position */
 	Uint8 duty;				/* duty rate */
 	Uint8 key;
 	Uint8 mute;
@@ -95,11 +92,9 @@ typedef struct
 	LINEARCOUNTER li;		/* linear counter */
 	Uint32 mastervolume;	/* master volume (0x0 ~ +0x3FF) */
 	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
-	Uint32 fc;				/* frame counter; */
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint8 st;				/* wave step */
-	Uint8 fp;				/* frame position; */
 	Uint8 key;
 	Uint8 mute;
 	Uint32 last_amp;
@@ -112,12 +107,10 @@ typedef struct
 	ENVELOPEDECAY ed;
 	Uint32 mastervolume;
 	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
-	Uint32 fc;				/* frame counter; */
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint32 rng;
 	Uint8 rngshort;
-	Uint8 fp;				/* frame position; */
 	Uint8 key;
 	Uint8 mute;
 	Uint32 last_amp;
@@ -152,6 +145,8 @@ typedef struct
 	NESAPU_TRIANGLE triangle;
 	NESAPU_NOISE noise;
 	NESAPU_DPCM dpcm;
+    Uint32 fc;    			/* Global Frame Counter */
+    Uint32 fp;    			/* Global Frame Position */
 	Uint32 cpf[3];			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint8 regs[0x20];
 } APUSOUND __attribute__((aligned(32)));
@@ -226,7 +221,7 @@ __inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 // We no longer need cps calculations now, since blip doesn't render per-sample
 __inline static void linearCounterStepBlip(LINEARCOUNTER *li)
 {
-    li->fc -= li->cpf;
+    apu.fc -= li->cpf;
     // Reload if flag is enabled
     if (li->tocount)
     {
@@ -314,8 +309,6 @@ __inline static u32 nesDutyToDs(u8 duty_value)
             return SOUNDCNT_DUTY_50_0;
         case 0x0C: // 12/16 steps = 75%
             return SOUNDCNT_DUTY_75_0;
-        default:
-            return SOUNDCNT_DUTY_50_0;
     }
 }
 
@@ -328,23 +321,8 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, DS_PSG_Channel ds_chan, 
 {
     uint32_t nes_apu_clock = cache_is_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     
-    // Frame Counter and sequencer (Envelopes, Sweeps, Length)
-    ch->fc += nes_apu_clock;
-    if (ch->fc >= *(ch->cpf))
-    {
-        if (ch->fp & 1)
-        {
-            lengthCounterStep(&ch->lc);  // ~60Hz
-        }
-        if (!(ch->fp & 1))
-        {
-            sweepStep(&ch->sw, &ch->wl); // ~120Hz
-        }
-        envelopeDecayStep(&ch->ed);      // ~240Hz
-        REG_SOUNDxTMR(ds_chan) = nesToDsTimer(ch->wl, nes_apu_clock); // We need to update the DS timer here too
-        ch->fp++;
-        ch->fc = 0;
-    }
+    // Sweep, lenght and decay are now updated globally in nesApuProcessBlipBufferChannels()
+    // We just need to read the updated values. 
 
     // Calculate target wavelength to handle Sweep
     u32 delta_wl = ch->wl >> ch->sw.shifter;
@@ -352,7 +330,10 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, DS_PSG_Channel ds_chan, 
     if (ch->sw.direction)
     {
         sweep_target -= delta_wl;
-        if (ch == &apu.square[0] && sweep_target > 0) sweep_target--; 
+        if (ch == &apu.square[0] && sweep_target > 0)
+        {
+            sweep_target--; 
+        }
     }
     else
     {
@@ -370,7 +351,9 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, DS_PSG_Channel ds_chan, 
     // Convert wavelenght, duty and volume parameters to the DS PSG hardware channel
     u32 ds_duty = nesDutyToDs(ch->duty);
     u8  volume  = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
-    u8  ds_vol  = volume << 1; 
+    u8  ds_vol  = volume << 1;
+
+    REG_SOUNDxTMR(ds_chan) = nesToDsTimer(ch->wl, nes_apu_clock);
 
     if (!snd_isChannelPlaying(ds_chan))
     {
@@ -460,7 +443,7 @@ __inline static void nesApuSoundPulseRenderBlipSlice(NESAPU_SQUARE *ch, blip_t* 
     {
         if (ch->last_amp != 0)
         {
-            blip_add_delta(blip_buffer, time_offset, -(ch->last_amp) << DELTA_VOL);
+            blip_add_delta_fast(blip_buffer, time_offset, -(ch->last_amp) << DELTA_VOL);
             ch->last_amp = 0;
         }
         // IMPORTANT: Sum clocks to the pt remainder instead of resetting to 0.
@@ -492,7 +475,7 @@ __inline static void nesApuSoundPulseRenderBlipSlice(NESAPU_SQUARE *ch, blip_t* 
         int amp = (ch->st >= ch->duty) ? current_vol : 0;
         if (amp != ch->last_amp)
         {
-            blip_add_delta(blip_buffer, time_at_delta + time_offset, (amp - ch->last_amp) << DELTA_VOL);
+            blip_add_delta_fast(blip_buffer, time_at_delta + time_offset, (amp - ch->last_amp) << DELTA_VOL);
             ch->last_amp = amp;
         }
 
@@ -639,7 +622,7 @@ __inline static void nesApuSoundNoiseRenderBlipSlice(NESAPU_NOISE *ch, blip_t* b
         time_at_delta += time_to_next;
         ch->pt = 0; // Reset phase
 
-        // Update LFSR
+        // Spec: bit 0 XOR (bit 1 or bit 6, 15bit shift)
         u16 feedback = (ch->rng & 1) ^ ((ch->rng >> (ch->rngshort ? 6 : 1)) & 1);
         ch->rng = (ch->rng >> 1) | (feedback << 14);
 
@@ -648,7 +631,7 @@ __inline static void nesApuSoundNoiseRenderBlipSlice(NESAPU_NOISE *ch, blip_t* b
 
         if (new_amp != ch->last_amp)
         {
-            blip_add_delta_raw(blip_buffer, time_offset + time_at_delta, (new_amp - ch->last_amp) << DELTA_VOL);
+            blip_add_delta_fast(blip_buffer, time_offset + time_at_delta, (new_amp - ch->last_amp) << DELTA_VOL);
             ch->last_amp = new_amp;
         }
     }
@@ -816,7 +799,7 @@ __inline static void nesApuSoundDmcRenderBlipSlice(NESAPU_DPCM *ch, blip_t* blip
             // Inyect delta if any changes ocurred
             if (ch->dacout != old_dac)
             {
-                blip_add_delta(blip_buffer, start_time + t, (int)(ch->dacout - old_dac) << DMC_DELTA_VOL);
+                blip_add_delta_fast(blip_buffer, start_time + t, (int)(ch->dacout - old_dac) << DMC_DELTA_VOL);
                 ch->last_amp = ch->dacout;
             }
 
@@ -854,127 +837,69 @@ __inline static void nesApuSoundDmcRenderBlipSlice(NESAPU_DPCM *ch, blip_t* blip
 // Main blip_buf render function
 void nesApuProcessBlipBufferChannels(int sample_count, u32 apu_flags)
 {
-    // Calculate clocks needed for the deltas
     int total_clocks = blip_clocks_needed(master_blip, sample_count);
-	if (total_clocks == 0 && sample_count > 0)
-    { 
-        total_clocks = sample_count * 54;
-    }
+    if (total_clocks <= 0) return;
 
-    // --- Render Pulse ---
-    for (int i = 0; i < 2; i++)
+    int time_done = 0;
+    
+    // We use a global cpf now
+    int cycles_per_step = apu.cpf[0]; 
+
+    while (time_done < total_clocks)
     {
-        NESAPU_SQUARE *ch = &apu.square[i];
-        int time_done = 0;
-        // Determine pulse channel 0/1
-        bool flag_mute = (i == 0) ? (apu_flags & APU_STAT_MUTE_P1) : (apu_flags & APU_STAT_MUTE_P2);
+        // Calculate how much time is left for the next APU "tick" (Envelope/Sweep/etc)
+        // We now use a global frame counter
+        int clocks_until_next_fc = cycles_per_step - apu.fc;
+        int clocks_to_run = total_clocks - time_done;
 
-        while (time_done < total_clocks)
+        if (clocks_to_run > clocks_until_next_fc)
+            clocks_to_run = clocks_until_next_fc;
+
+        // RENDER SLICES
+        nesApuSoundPulseRenderBlipSlice(&apu.square[0], master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_P1));
+        nesApuSoundPulseRenderBlipSlice(&apu.square[1], master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_P2));
+        nesApuSoundTriangleRenderBlipSlice(&apu.triangle, master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_TRI));
+        nesApuSoundNoiseRenderBlipSlice(&apu.noise, master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_NOI));
+        
+        time_done += clocks_to_run;
+
+        // UPDATE FRAME COUNTER FOR EVERYTHING
+        // A real NES updates at 60, 120 y 240Hz respectively        
+        apu.fc += clocks_to_run;
+        if (apu.fc >= cycles_per_step)
         {
-            int cycles_per_frame_step = *(ch->cpf);
-            int clocks_until_next_fc = cycles_per_frame_step - ch->fc;
-            int clocks_to_run = total_clocks - time_done;
-            if (clocks_to_run > clocks_until_next_fc)
+            // Reset fc for all
+            apu.fc = 0;
+            int step = apu.fp++;
+
+            // 240Hz
+            envelopeDecayStep(&apu.square[0].ed);
+            envelopeDecayStep(&apu.square[1].ed);
+            envelopeDecayStep(&apu.noise.ed);
+            linearCounterStepBlip(&apu.triangle.li);
+            // 120Hz
+            if (!(step & 1))
             {
-                clocks_to_run = clocks_until_next_fc;   
+                sweepStep(&apu.square[0].sw, &apu.square[0].wl);
+                sweepStep(&apu.square[1].sw, &apu.square[1].wl);
+            // 60Hz    
             }
-
-            // Render Slice
-            nesApuSoundPulseRenderBlipSlice(ch, master_blip, clocks_to_run, time_done, flag_mute);
-
-            // A real NES updates at 60, 120 y 240Hz respectively
-            time_done += clocks_to_run;
-            ch->fc += clocks_to_run;
-            // Frame Counter and sequencer (Envelope, Length, Sweep)
-            if (ch->fc >= cycles_per_frame_step)
+            else
             {
-                ch->fc = 0; 
-                //Lenght Counter should be called twice per frame, not once
-                if (ch->fp & 1)
-                {
-                    lengthCounterStep(&ch->lc);  // 60Hz
-                }
-                if (!(ch->fp & 1))
-                {
-                    sweepStep(&ch->sw, &ch->wl); // 120Hz
-                }
-                envelopeDecayStep(&ch->ed);      // 240Hz
-                ch->fp++;
+                lengthCounterStep(&apu.square[0].lc);
+                lengthCounterStep(&apu.square[1].lc);
+                lengthCounterStep(&apu.triangle.lc);
+                lengthCounterStep(&apu.noise.lc);
+            }
+            // --- UPDATE PSG PULSE HARDWARE IF ENABLED ---
+            if (CurrentPulseMode == PULSE_CH_HW) 
+            {
+                nesApuSoundPulseHwRender(apu_flags);
             }
         }
     }
 
-    // --- Process Triangle ---
-    NESAPU_TRIANGLE *tri = &apu.triangle;
-    int tri_done = 0;
-    while (tri_done < total_clocks)
-    {
-        int clocks_to_run = total_clocks - tri_done;
-        int next_fc = *(tri->cpf) - tri->fc;
-        if (clocks_to_run > next_fc)
-        {
-            clocks_to_run = next_fc;
-        }
-
-        // Render Slice
-        nesApuSoundTriangleRenderBlipSlice(tri, master_blip, clocks_to_run, tri_done, (apu_flags & APU_STAT_MUTE_TRI));
-
-        // A real NES updates at 60, 120 y 240Hz respectively
-        tri_done += clocks_to_run;
-        tri->fc += clocks_to_run;
-        // Frame Counter and sequencer (Linear, Length)
-        if (tri->fc >= *(tri->cpf))
-        {
-            tri->fc = 0;
-            linearCounterStepBlip(&tri->li);  // 240Hz
-            //Lenght Counter should be called twice per frame, not once
-            if (tri->fp & 1)
-            {
-                lengthCounterStep(&tri->lc);  // 60Hz
-            }
-            tri->fp++;
-        }
-    }
-
-    // --- Process Noise ---
-	NESAPU_NOISE *nz = &apu.noise;
-	int nz_done = 0;
-	while (nz_done < total_clocks)
-    {
-		int cycles_per_fc = *(nz->cpf);
-		int clocks_until_fc = cycles_per_fc - nz->fc;
-
-        // A real NES updates at 60, 120 y 240Hz respectively
-		int clocks_to_run = total_clocks - nz_done;
-		if (clocks_to_run > clocks_until_fc)
-        {
-            clocks_to_run = clocks_until_fc;
-        }
-
-		// Frame Counter and sequencer (Envelope, Length)
-		if (clocks_to_run <= 0)
-        {
-            //LenghtCounterStep should be called twice per frame, not once
-			if (nz->fp & 1)
-            {
-                lengthCounterStep(&nz->lc); // 60Hz
-            }
-			envelopeDecayStep(&nz->ed);     // 240Hz
-			nz->fp++;
-			nz->fc = 0;
-			continue; // Evaluate clocks to run again
-		}
-
-        // Render Slice
-        nesApuSoundNoiseRenderBlipSlice(nz, master_blip, clocks_to_run, nz_done, (apu_flags & APU_STAT_MUTE_NOI));
-
-        nz_done += clocks_to_run;
-        nz->fc += clocks_to_run;
-    }
-
-
-    // -- Process DMC --
-    // DMC doesn't have a 240Hz counter, we can render it directly
+    // DMC is a sample channel, it doesn't need any counter update.
     nesApuSoundDmcRenderBlipSlice(&apu.dpcm, master_blip, total_clocks, 0, (apu_flags & APU_STAT_MUTE_DMC));
 
     // Mix everything
@@ -1043,9 +968,9 @@ void apuSoundWrite(Uint address, Uint value)
 				apu.square[ch].lc.counter = (vbl_length_table[value >> 3]);
 				// Side Effects (Spec):
 				apu.square[ch].st = 0;           // "resets the phase of the pulse generator"
-				apu.square[ch].fc = 0;
+				apu.fc = 0;
+                apu.fp = 0;
 				apu.square[ch].pt = 0;
-				apu.square[ch].fp = 0;
 				apu.square[ch].ed.counter = PULSE_VOLUME_MASK;  // "restarts the envelope" (returns to max volume)
 				apu.square[ch].ed.timer = 0;      // "resets the envelope divisor"
 				
@@ -1291,7 +1216,7 @@ static void apuSyncConfigCache(void)
 static void __fastcall apuSoundReset(void)
 {
 	// Set APU flags
-	int nes_apu_clock = (cache_is_pal) ? NES_CPU_PAL : NES_CPU_NTSC;
+	uint32_t nes_apu_clock = cache_is_pal ? NES_CPU_PAL : NES_CPU_NTSC;
 	apuSyncConfigCache();
 
 	// blip_buf is now in charge of the NES -> DS rates.
@@ -1314,7 +1239,7 @@ static void __fastcall apuSoundReset(void)
 	apu.cpf[2] = nes_apu_clock / ((cache_is_pal) ? 160 : 192);
 	apu.cpf[0] = apu.cpf[1]; // Default
 
-	// Configure cycles pointers
+	// Configure cycles pointers TODO: Use a global cpf
 	Uint32 *base_cpf = &apu.cpf[0];
 	apu.square[1].sw.ch = 1;
 	apu.square[0].cpf = base_cpf;
