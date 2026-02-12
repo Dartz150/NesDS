@@ -143,7 +143,6 @@ typedef struct
 	NESAPU_DPCM dpcm;
     Uint32 fc;    			/* Global Frame Counter */
     Uint32 fp;    			/* Global Frame Position */
-	Uint32 cpf[3];			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint8 regs[0x20];
 } APUSOUND __attribute__((aligned(32)));
 
@@ -202,9 +201,33 @@ static const Uint32 dpcm_freq_table_pal[16] =
 	0x0B0, 0x094, 0x084, 0x076, 0x062, 0x04E, 0x042, 0x032
 };
 
+// NTSC: 1 APU cycle ≈ 2 CPU cycles (1.78 MHz)
+static const Uint32 frame_seq_ntsc_4[4] = // NTSC 4 step mode 
+{
+    7457, 14913, 22371, 29829
+};
+
+static const Uint32 frame_seq_ntsc_5[5] = // NTSC 5 step mode 
+{ 
+    7457, 14913, 22371, 29829, 37281
+}; 
+
+// PAL: 1 APU cycle ≈ 2 CPU cycles (1.66 MHz)
+static const Uint32 frame_seq_pal_4[4]  = // PAL 4 step mode 
+{
+    8313, 16627, 24939, 33253
+};
+
+static const Uint32 frame_seq_pal_5[5]  = // PAL 5 step mode 
+{
+    8313, 16627, 24939, 33253, 41565
+};
+
 static const Uint8  *square_duty_table;
 static const Uint32 *noise_time_period_table;
 static const Uint32 *dpcm_freq_table;
+static const Uint32 *frame_seq_4;
+static const Uint32 *frame_seq_5;
 
 __inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 {
@@ -217,7 +240,6 @@ __inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 // We no longer need cps calculations now, since blip doesn't render per-sample
 __inline static void linearCounterStepBlip(LINEARCOUNTER *li)
 {
-    apu.fc -= apu.cpf[0];
     // Reload if flag is enabled
     if (li->tocount)
     {
@@ -839,58 +861,87 @@ void nesApuProcessBlipBufferChannels(int sample_count, u32 apu_flags)
     if (total_clocks <= 0) return;
 
     int time_done = 0;
-    
-    // We use a global cpf now
-    int cycles_per_step = apu.cpf[0];
+    // Handle the Frame Sequencer modes (4/5) properly
+    bool mode5 = (apu.regs[0x17] & APU_FRAME_5STEP);
 
     while (time_done < total_clocks)
     {
         // Calculate how much time is left for the next APU "tick" (Envelope/Sweep/etc)
-        // We now use a global frame counter
-        int clocks_until_next_fc = cycles_per_step - apu.fc;
+        // Select the proper frame sequencer table (AKA frame counter)
+        const Uint32* current_seq = mode5 ? frame_seq_5 : frame_seq_4;
+        int max_step = mode5 ? 5 : 4;
+        
+        uint32_t next_event = current_seq[apu.fp];
         int clocks_to_run = total_clocks - time_done;
+        int clocks_until_next_tick = next_event - apu.fc;
 
-        if (clocks_to_run > clocks_until_next_fc)
-            clocks_to_run = clocks_until_next_fc;
+        if (clocks_to_run > clocks_until_next_tick)
+            clocks_to_run = clocks_until_next_tick;
 
         // RENDER SLICES
         nesApuSoundPulseRenderBlipSlice(&apu.square[0], master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_P1));
         nesApuSoundPulseRenderBlipSlice(&apu.square[1], master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_P2));
         nesApuSoundTriangleRenderBlipSlice(&apu.triangle, master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_TRI));
         nesApuSoundNoiseRenderBlipSlice(&apu.noise, master_blip, clocks_to_run, time_done, (apu_flags & APU_STAT_MUTE_NOI));
-        
+
         time_done += clocks_to_run;
-
-        // UPDATE FRAME COUNTER FOR EVERYTHING
-        // A real NES updates at 60, 120 y 240Hz respectively        
+        
+        // CLOCK THE FRAME SEQUENCER FOR EVERY APU CHANNEL
+        // https://www.nesdev.org/wiki/APU_Frame_Counter
         apu.fc += clocks_to_run;
-        if (apu.fc >= cycles_per_step)
+        if (apu.fc >= next_event)
         {
-            // Reset fc for all
-            apu.fc = 0;
-            int step = apu.fp++;
+            int step = apu.fp;
+            if (mode5) // 5 Step mode
+            {
+                // Step 0: .ed | step 1: .ed .li | step 2: .ed | step 3: nothing | step 4: .ed .li
+                if (step == 0 || step == 1 || step == 2 || step == 4)
+                {
+                    envelopeDecayStep(&apu.square[0].ed);
+                    envelopeDecayStep(&apu.square[1].ed);
+                    envelopeDecayStep(&apu.noise.ed);
+                    linearCounterStepBlip(&apu.triangle.li);
+                }
+                if (step == 1 || step == 4)
+                {
+                    lengthCounterStep(&apu.square[0].lc);
+                    lengthCounterStep(&apu.square[1].lc);
+                    lengthCounterStep(&apu.triangle.lc);
+                    lengthCounterStep(&apu.noise.lc);
+                    sweepStep(&apu.square[0].sw, &apu.square[0].wl);
+                    sweepStep(&apu.square[1].sw, &apu.square[1].wl);
+                }
+            }
+            else // 4 Step mode:
+            {
+                // step 0, 1, 2, 3: .ed | step 1, 3: .li | step 3: apuirq
+                envelopeDecayStep(&apu.square[0].ed);
+                envelopeDecayStep(&apu.square[1].ed);
+                envelopeDecayStep(&apu.noise.ed);
+                linearCounterStepBlip(&apu.triangle.li);
 
-            // 240Hz
-            envelopeDecayStep(&apu.square[0].ed);
-            envelopeDecayStep(&apu.square[1].ed);
-            envelopeDecayStep(&apu.noise.ed);
-            linearCounterStepBlip(&apu.triangle.li);
-            // 120Hz
-            if (!(step & 1))
-            {
-                sweepStep(&apu.square[0].sw, &apu.square[0].wl);
-                sweepStep(&apu.square[1].sw, &apu.square[1].wl);
-            // 60Hz    
+                if (step == 1 || step == 3)
+                {
+                    lengthCounterStep(&apu.square[0].lc);
+                    lengthCounterStep(&apu.square[1].lc);
+                    lengthCounterStep(&apu.triangle.lc);
+                    lengthCounterStep(&apu.noise.lc);
+                    sweepStep(&apu.square[0].sw, &apu.square[0].wl);
+                    sweepStep(&apu.square[1].sw, &apu.square[1].wl);
+                }
+                if (step == 3 && !(apu.regs[0x17] & APU_FRAME_IRQ_OFF))
+                {
+                    apuirq = 1; // Fire IRQ if disabled
+                }
             }
-            if (step & 1)
+            apu.fp++;
+            if (apu.fp >= max_step)
             {
-                lengthCounterStep(&apu.square[0].lc);
-                lengthCounterStep(&apu.square[1].lc);
-                lengthCounterStep(&apu.triangle.lc);
-                lengthCounterStep(&apu.noise.lc);
+                apu.fp = 0;
+                apu.fc = 0;
             }
-            // --- UPDATE PSG PULSE HARDWARE IF ENABLED ---
-            if (CurrentPulseMode == PULSE_CH_HW) 
+            // --- UPDATE DS PSG PULSE HARDWARE IF ENABLED ---
+            if (CurrentPulseMode == PULSE_CH_HW)
             {
                 nesApuSoundPulseHwRender(apu_flags);
             }
@@ -966,9 +1017,6 @@ void apuSoundWrite(Uint address, Uint value)
 				apu.square[ch].lc.counter = (vbl_length_table[value >> 3]);
 				// Side Effects (Spec):
 				apu.square[ch].st = 0;           // "resets the phase of the pulse generator"
-				apu.fc = 0;
-                apu.fp = 0;
-				apu.square[ch].pt = 0;
 				apu.square[ch].ed.counter = PULSE_VOLUME_MASK;  // "restarts the envelope" (returns to max volume)
 				apu.square[ch].ed.timer = 0;      // "resets the envelope divisor"
 				
@@ -1116,15 +1164,31 @@ void apuSoundWrite(Uint address, Uint value)
 			// Frame Counter ($4017)	
 			case APU_FRAME_COUNTER:
 			{
+                apu.regs[0x17] = value;
+                apu.fc = 0;
+                apu.fp = 0;
 				if (value & APU_FRAME_5STEP)
-				{
-					apu.cpf[0] = apu.cpf[2];
+                {
+                    // Spec: "immediately clock all of its controlled units"
+                    envelopeDecayStep(&apu.square[0].ed);
+                    envelopeDecayStep(&apu.square[1].ed);
+                    envelopeDecayStep(&apu.noise.ed);
+                    linearCounterStepBlip(&apu.triangle.li);
+
+                    lengthCounterStep(&apu.square[0].lc);
+                    lengthCounterStep(&apu.square[1].lc);
+                    lengthCounterStep(&apu.triangle.lc);
+                    lengthCounterStep(&apu.noise.lc);
+                    
+                    sweepStep(&apu.square[0].sw, &apu.square[0].wl);
+                    sweepStep(&apu.square[1].sw, &apu.square[1].wl);
 				}
-				else
-				{
-					apu.cpf[0] = apu.cpf[1];
-				}
-				break;
+                // If bit 6 is set, clean the IRQ flag
+                if (value & APU_FRAME_IRQ_OFF)
+                {
+                    apuirq = 0;
+                }
+                break;
 			}
 		}
 		return;
@@ -1208,6 +1272,17 @@ static void apuSyncConfigCache(void)
 	square_duty_table = cache_pulse_reverse ? square_duty_table_inverted : square_duty_table_normal;
     noise_time_period_table = cache_is_pal ? noise_time_period_table_pal : noise_time_period_table_ntsc;
     dpcm_freq_table = cache_is_pal ? dpcm_freq_table_pal : dpcm_freq_table_ntsc;
+
+    // Set Frame Sequencer Tables
+    if (cache_is_pal) {
+        frame_seq_4 = frame_seq_pal_4;
+        frame_seq_5 = frame_seq_pal_5;
+    }
+    else
+    {
+        frame_seq_4 = frame_seq_ntsc_4;
+        frame_seq_5 = frame_seq_ntsc_5;
+    }
 }
 
 // We no longer need cps calculations now, since blip doesn't render per-sample
@@ -1219,26 +1294,14 @@ static void __fastcall apuSoundReset(void)
 
 	// blip_buf is now in charge of the NES -> DS rates.
 	nesApuBlipInit(nes_apu_clock, DS_SOUND_FREQUENCY);
+    nesApuSoundPulseHwStop();
 
-	// Clear and Configure every APU channel
-	nesApuSoundPulseHwStop();
-	memset(&apu.square[0], 0, sizeof(NESAPU_SQUARE));
-	memset(&apu.square[1], 0, sizeof(NESAPU_SQUARE));
-	memset(&apu.triangle, 0, sizeof(NESAPU_TRIANGLE));
-	memset(&apu.noise, 0, sizeof(NESAPU_NOISE));
-	memset(&apu.dpcm, 0, sizeof(NESAPU_DPCM));
+	// Clear and Configure every APU channel and regs
+	memset(&apu, 0, sizeof(APUSOUND));
 
-	// Frame Counter runs at 240Hz (Mode 4-step) or ~192Hz (PAL)
-    // We divide the CPU clock by the frame freq.
-    // NTSC: 1789773 / 240 = 7457 cycles per step.
-	u32 frame_rate = (cache_is_pal) ? 200 : 240; // 50Hz*4 steps vs 60Hz*4 steps
-
-	apu.cpf[1] = nes_apu_clock / frame_rate;
-	apu.cpf[2] = nes_apu_clock / ((cache_is_pal) ? 160 : 192);
-	apu.cpf[0] = apu.cpf[1]; // Default
     apu.noise.rng = 1; // Noise channel must be inited with 1
-
-	// We now use a global apu.cpf[0]
+    apu.dpcm.first = 1;
+    apu.regs[0x17] = 0x00; // Spec: Init $4017 reg en 4 step mode (0x00)
 
 	for (int i = 0; i <= 0x17; i++)
 	{
