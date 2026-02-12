@@ -38,7 +38,6 @@ typedef struct
 // Linear Counter
 typedef struct 
 {
-	Uint32 cpf;				/* cycles per frame (240Hz fix) */
 	Uint8 load;				/* length counter load register */
 	Uint8 start;			/* length counter start */
 	Uint8 counter;		    /* length counter */
@@ -76,7 +75,6 @@ typedef struct
 	ENVELOPEDECAY ed;
 	SWEEP sw;
 	Uint32 mastervolume;
-	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint8 st;				/* wave step */
@@ -91,7 +89,6 @@ typedef struct
 	LENGTHCOUNTER lc;		/* lenght counter */
 	LINEARCOUNTER li;		/* linear counter */
 	Uint32 mastervolume;	/* master volume (0x0 ~ +0x3FF) */
-	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint8 st;				/* wave step */
@@ -106,7 +103,6 @@ typedef struct
 	LINEARCOUNTER li;
 	ENVELOPEDECAY ed;
 	Uint32 mastervolume;
-	Uint32 *cpf;			/* cycles per frame (240/192Hz) ($4017.bit7) */
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint32 rng;
@@ -221,7 +217,7 @@ __inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 // We no longer need cps calculations now, since blip doesn't render per-sample
 __inline static void linearCounterStepBlip(LINEARCOUNTER *li)
 {
-    apu.fc -= li->cpf;
+    apu.fc -= apu.cpf[0];
     // Reload if flag is enabled
     if (li->tocount)
     {
@@ -843,7 +839,7 @@ void nesApuProcessBlipBufferChannels(int sample_count, u32 apu_flags)
     int time_done = 0;
     
     // We use a global cpf now
-    int cycles_per_step = apu.cpf[0]; 
+    int cycles_per_step = apu.cpf[0];
 
     while (time_done < total_clocks)
     {
@@ -1238,17 +1234,9 @@ static void __fastcall apuSoundReset(void)
 	apu.cpf[1] = nes_apu_clock / frame_rate;
 	apu.cpf[2] = nes_apu_clock / ((cache_is_pal) ? 160 : 192);
 	apu.cpf[0] = apu.cpf[1]; // Default
+    apu.noise.rng = 1; // Noise channel must be inited with 1
 
-	// Configure cycles pointers TODO: Use a global cpf
-	Uint32 *base_cpf = &apu.cpf[0];
-	apu.square[1].sw.ch = 1;
-	apu.square[0].cpf = base_cpf;
-    apu.square[1].cpf = base_cpf;
-    apu.triangle.cpf  = base_cpf;
-    apu.noise.cpf     = base_cpf;
-	apu.noise.rng = 1; // Noise channel must be inited with 1
-
-	apu.triangle.li.cpf = apu.cpf[1];
+	// We now use a global apu.cpf[0]
 
 	for (int i = 0; i <= 0x17; i++)
 	{
