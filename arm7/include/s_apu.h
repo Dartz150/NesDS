@@ -11,9 +11,6 @@ void APUSoundInstall(void);
 void APU4015Reg(void);
 void APUSoundWrite(Uint address, Uint value);
 
-// Blip Buffer Shared Buffer
-extern int16_t blip_buf[MIXBUFSIZE];
-
 #ifdef __cplusplus
 }
 #endif

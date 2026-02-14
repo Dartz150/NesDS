@@ -608,16 +608,14 @@ void menu_emu_ntsc(void)
 // lastbutton_cnt only needs to match a consecutive integer...
 void menu_sound_br(void)
 {
+	fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
     switch (lastbutton_cnt)
     {
 		case 0: // Stereo
             __apu_flags ^= APU_STAT_STEREO;
             break;
         case 1: // Pulse Mode
-			// We need to pause the APU to avoid PSG leftovers
-			fifoSendValue32(FIFO_USER_08, FIFO_APU_PAUSE);
             __apu_flags ^= APU_STAT_PULSE_HW;
-			fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
             break;
         case 2: // Duty
             __apu_flags ^= APU_STAT_DUTY_REV;
@@ -625,11 +623,12 @@ void menu_sound_br(void)
 			fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
             break;
 		case 3: // Sound reset
-		fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
+			fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
 			break;
     } 
     // Sync with ARM7 
     updateApuSettings();
+	fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
     menu_stat = 1; 
     menu_draw = 0;
 }

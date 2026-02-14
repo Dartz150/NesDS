@@ -54,11 +54,11 @@ static void VRC6SoundSetPulseLineRegs()
     vrc6s.p_low  = is_vrc6_24 ? 1 : 2;
 }
 
-static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch)
+static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch, bool is_muted)
 {
 	// When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
-	if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80)) 
+	if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80) || is_muted) 
     {
         return 0;
     }
@@ -84,11 +84,11 @@ static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch)
     return (ch->adr <= duty) ? volume : 0;
 }
 
-static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
+static Int32 VRC6SoundSawRender(VRC6_SAW *ch, bool is_muted)
 {
     // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
-    if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80))
+    if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80) || is_muted)
     {
         return 0;
     }
@@ -121,12 +121,12 @@ static Int32 VRC6SoundSawRender(VRC6_SAW *ch)
 }
 
 // VRC6 Mixer. NesDev: "Lineal 6 bit sum (max 61: 15 + 15 + 31)"
-int32_t VRC6SoundRender(u32 flags) 
+int32_t VRC6SoundRender() 
 {
     int32_t sum = 0;
-    if (!(flags & APU_STAT_MUTE_VRC_P1)) sum += VRC6SoundSquareRender(&vrc6s.square[0]);
-    if (!(flags & APU_STAT_MUTE_VRC_P2)) sum += VRC6SoundSquareRender(&vrc6s.square[1]);
-    if (!(flags & APU_STAT_MUTE_VRC_SAW)) sum += VRC6SoundSawRender(&vrc6s.saw);
+    sum += VRC6SoundSquareRender(&vrc6s.square[0], apu_cfg.vrc_p1);
+    sum += VRC6SoundSquareRender(&vrc6s.square[1], apu_cfg.vrc_p2);
+    sum += VRC6SoundSawRender(&vrc6s.saw, apu_cfg.vrc_saw);
     
     return sum * VRC6_MIX_FACTOR;
 }

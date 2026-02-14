@@ -38,25 +38,13 @@ extern "C" {
 
 #define MIXBUFSIZE        (1 << 7)
 
-// struct unused yet
-enum AudioFilterType
-{
-   NES_AUDIO_FILTER_NONE,
-   NES_AUDIO_FILTER_CRISP,
-   NES_AUDIO_FILTER_LOWPASS,
-   NES_AUDIO_FILTER_HIGHPASS,
-   NES_AUDIO_FILTER_WEIGHTED,
-   NES_AUDIO_FILTER_OLDTV
-};
-
 // Pulse Channels 1 and 2 Hardware renderers
 // PSG channel writes change the sound INSTANTLY. 
 // Always call this after the software sound renderers to avoid sound latency.
-void nesApuSoundPulseHwRender(u32 flags);
-void nesApuSoundPulseHwStop();
+void nesApuSoundHwStop();
 
 // Bip Buffer processes all the APU channels now
-void nesApuProcessBlipBufferChannels(int sample_count, u32 apu_flags);
+void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer);
 void apuSoundInstall();
 void FDSSoundInstall();
 void readApu();

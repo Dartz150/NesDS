@@ -29,13 +29,9 @@
 static s16 buffer_L[MIXBUFSIZE * 2] ALIGN(32);
 static s16 buffer_R[MIXBUFSIZE * 2] ALIGN(32);
 
-// Blip Buffer
-int16_t blip_buf[MIXBUFSIZE] ALIGN(32);
-
 // Sound status flags
-static int delay_ptr = 0;
-static int APU_paused = 0;
-static int chan = 0;
+static int APU_paused;
+static int chan;
 
 // Resets the APU emulation to avoid garbage sounds
 void resetApu()
@@ -50,19 +46,18 @@ void resetApu()
 }
 
 // blip_buf mixes everything, we no longer need to emulate the APU mixer or convert samples.
-void __fastcall soundMain(int chan)
+void __fastcall soundMain(int active_chan)
 {
     if (APU_paused) return;
-    u32 flags = apu_internal_state; // APU Sound status flags (ARM7)
+
+	s16 *pcmL = &buffer_L[active_chan * MIXBUFSIZE];
+    s16 *pcmR = &buffer_R[active_chan * MIXBUFSIZE];
     
     // Render NES Sound frame. blip_buf already delivers centered PCM16 samples, prefect for the DS
-    nesApuProcessBlipBufferChannels(MIXBUFSIZE, flags);
+    nesApuProcessBlipBufferChannels(MIXBUFSIZE, pcmL);
 
     // Fill Buffers for the DS hardware (TODO: Handle filter and stereo using blip_buf)
-    s16 *pcmL = &buffer_L[chan * MIXBUFSIZE];
-    s16 *pcmR = &buffer_R[chan * MIXBUFSIZE];
-    memcpy(pcmL, blip_buf, MIXBUFSIZE * sizeof(s16));
-    memcpy(pcmR, blip_buf, MIXBUFSIZE * sizeof(s16));
+    memcpy(pcmR, pcmL, MIXBUFSIZE * sizeof(s16));
 
     readApu();
     APU4015Reg();
@@ -72,7 +67,6 @@ static void clearSoundBuffers(void)
 {
     memset(buffer_L, 0, sizeof(buffer_L));
     memset(buffer_R, 0, sizeof(buffer_R));
-    delay_ptr = 0;
 }
 
 void initsound()
@@ -110,7 +104,7 @@ void initsound()
 
 	TIMER_DATA(1) = (u16)-MIXBUFSIZE;
 	TIMER_CR(1) = TIMER_CASCADE | TIMER_IRQ_REQ | TIMER_ENABLE;
-	nesApuSoundPulseHwStop();
+	nesApuSoundHwStop();
 }
 
 void stopsound()
@@ -119,14 +113,17 @@ void stopsound()
     TIMER_CR(1) = 0;
 	SCHANNEL_CR(RIGHT_CHANNEL) &= ~SCHANNEL_ENABLE;
     SCHANNEL_CR(LEFT_CHANNEL)  &= ~SCHANNEL_ENABLE;
-    nesApuSoundPulseHwStop();
+    nesApuSoundHwStop();
 	clearSoundBuffers();
 }
 
 void restartsound(int ch)
 {
-	chan = ch;
+	soundMain(0);
+    soundMain(1);
 
+	chan = 0;
+	
 	SCHANNEL_CR(RIGHT_CHANNEL) |= SCHANNEL_ENABLE;
     SCHANNEL_CR(LEFT_CHANNEL)  |= SCHANNEL_ENABLE;
 
@@ -143,15 +140,9 @@ void lidinterrupt(void)
 
 void soundinterrupt(void)
 {
-	chan^=1;
-	soundMain(chan);
-	if(REG_IF & IRQ_TIMER1)
-	{
-		lidinterrupt();
-		chan = 1;
-		REG_IF = IRQ_TIMER1;
-	}
-
+    soundMain(chan); 
+    chan ^= 1; 
+    REG_IF = IRQ_TIMER1;
 }
 
 void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo channel.
@@ -162,19 +153,18 @@ void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo 
 	{
 		case FIFO_APU_UPDATE_FLAGS:
             applyApuStateMask(data);
-			delay_ptr = 0;
             break;
 		case FIFO_APU_PAUSE:
 			APU_paused = 1;
 			clearSoundBuffers();
-			nesApuSoundPulseHwStop();
+			nesApuSoundHwStop();
 			break;
 		case FIFO_UNPAUSE:
 			APU_paused = 0;
 			break;
 		case FIFO_APU_RESET:
 			clearSoundBuffers();
-			nesApuSoundPulseHwStop();
+			nesApuSoundHwStop();
 			APU_paused = 0;
 			resetApu();
 			APU4015Reg();
@@ -218,7 +208,7 @@ void nesmain()
 	resetApu();
 
 	initsound();
-	restartsound(1);
+	restartsound(0);
 
 	fifoSetValue32Handler(FIFO_USER_08, fifointerrupt, 0);		//use the last IPC channel to comm..
 	irqSet(IRQ_LID, lidinterrupt);
