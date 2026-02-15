@@ -718,24 +718,31 @@ __inline static void nesApuSoundTriangleRenderBlipSlice(NESAPU_TRIANGLE *ch, bli
 	// Timer ---> Gate ----------> Gate ---> Sequencer ---> (to mixer)
     // Triangle actually freezes, it doesn't get silenced.
     bool frozen = (ch->lc.counter == 0 || ch->li.counter == 0 || ch->wl < 2);
-    if (frozen || ch->mute)
+    if (ch->mute)
     {
-        // We don't sum clocks to ch->pt. Oscilator remains still.
-        return; 
+        if (ch->last_amp != 0)
+        {
+            blip_add_delta(blip_buffer, time_offset, -(ch->last_amp << DELTA_VOL));
+            ch->last_amp = 0;
+        }
+        return;
     }
 
-    u32 period = (ch->wl + 1);
-    u32 time_at_delta = 0;
-    if (ch->pt >= period)
+    if (frozen) 
     {
-        ch->pt %= period;
+        return; // If frozen, keep last amp
     }
+    u32 period = (ch->wl + 1); 
+    u32 time_at_delta = 0;
 
     while (time_at_delta < (u32)clocks)
     {
         // Generate 32 step wave (0-15-0)
-        int step_val = ch->st;
-        int amp = (step_val & 0x10) ? (0x1F - step_val) : step_val;  // 32 step cycle (0-31), invert to create slope
+        int amp = ch->st;
+        if (amp > 15)
+        {
+            amp = 31 - amp; // 32 step cycle (0-31), invert to create slope
+        }
 
         if (amp != ch->last_amp)
         {
@@ -743,7 +750,7 @@ __inline static void nesApuSoundTriangleRenderBlipSlice(NESAPU_TRIANGLE *ch, bli
             ch->last_amp = amp;
         }
 
-        u32 time_to_next = period - ch->pt;
+        u32 time_to_next = (period > ch->pt) ? (period - ch->pt) : 1;
 
         if (time_at_delta + time_to_next > (u32)clocks)
         {
@@ -1114,6 +1121,20 @@ void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer)
         }
     }
 
+    int final_time = total_clocks; 
+
+    if (apu.square[0].last_amp) blip_add_delta(master_blip, final_time, -(apu.square[0].last_amp << DELTA_VOL));
+    if (apu.square[1].last_amp) blip_add_delta(master_blip, final_time, -(apu.square[1].last_amp << DELTA_VOL));
+    if (apu.triangle.last_amp)  blip_add_delta(master_blip, final_time, -(apu.triangle.last_amp << DELTA_VOL));
+    if (apu.noise.last_amp)     blip_add_delta(master_blip, final_time, -(apu.noise.last_amp << DELTA_VOL));
+
+    // Reset last_amp before the next frame
+    apu.square[0].last_amp = 0;
+    apu.square[1].last_amp = 0;
+    apu.triangle.last_amp = 0;
+    apu.noise.last_amp = 0;
+    apu.dpcm.last_amp = 0;
+    
     // DMC is a sample channel, it doesn't need any counter update.
     nesApuSoundDmcRenderBlipSlice(&apu.dpcm, master_blip, total_clocks, 0, apu_cfg.dmc);
 
