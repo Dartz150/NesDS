@@ -11,14 +11,21 @@
 #include "soundChannel.h"
 
 // PSG Hardware Render Defines
-#define PSG_APU_SQUARE_1_CH     DS_PSG_CH8
-#define PSG_APU_SQUARE_2_CH     DS_PSG_CH9
-#define PSG_APU_TRIANGLE_CH     DS_PSG_CH10
-#define PSG_APU_NOISE_CH        DS_PSG_CH14
+#define PSG_APU_SQUARE_1_CH     DS_PSG_CH11
+#define PSG_APU_SQUARE_2_CH     DS_PSG_CH12
+#define PSG_APU_TRIANGLE_CH     DS_PSG_CH13
+#define PSG_APU_DMC_CH          DS_PSG_CH14
+#define PSG_APU_NOISE_CH        DS_PSG_CH15
 #define PSG_SQUARE_PAN_1_CH     64
 #define PSG_SQUARE_PAN_2_CH     64
 #define PSG_NOISE_PAN_CH        64
 #define PSG_TRIANGLE_PAN_CH     64
+#define PSG_DMC_PAN_CH          64
+
+// DMC RING BUFFER DEFINES
+#define DMC_BUF_SIZE    512  // Potencia de 2 para facilitar el wrapping
+#define DMC_MASK        (DMC_BUF_SIZE - 1)
+#define DMC_VOL_FACTOR  1
 
 // blip_buf Defines
 #define DELTA_VOL 9
@@ -30,9 +37,7 @@
 
 // Based from documentation found in https://www.nesdev.org/wiki/APU
 
-/*/ Lenght Counter /*/
-// Provides automatic duration control for the NES APU waveform channels ($4015 ~ $400F)
-
+// Lenght Counter
 typedef struct 
 {
 	Uint32 counter;			/* length counter */
@@ -123,6 +128,9 @@ typedef struct
 	Uint32 length;			/* bit length */
 	Uint32 mastervolume;
 	Uint32 adr;				/* current address */
+    Uint32 cps;				/* cycles per sample for RAW PCM */
+    Uint32 pt_raw;             // phase accum for RAW PCM
+    Uint32 lp;
 	Int32 dacout;
 	Int32 dacout0;
 	Uint8 start_length;
@@ -151,9 +159,24 @@ typedef struct
 } APUSOUND __attribute__((aligned(32)));
 
 static APUSOUND apu;
-static int  apuirq;
-static blip_t* master_blip;
+static int apuirq;
 static int ptr_mixed;
+static blip_t* master_blip;
+static const Uint8  *square_duty_table;
+static const Uint32 *noise_time_period_table;
+static const Uint32 *dpcm_freq_table;
+static const Uint32 *frame_seq_4;
+static const Uint32 *frame_seq_5;
+
+// DMC ring buffer
+static bool dmc_hw_initialized = false;
+static s8 dmc_ring_buffer[DMC_BUF_SIZE] __attribute__((aligned(4)));
+static int dmc_write_cursor;
+static int dmc_cycles_accumulator;
+
+// DMC RAW PCM counters
+static int last_pcm_sync;
+static int last_processed_line;
 
 // Square Duty LUT
 static const Uint8 square_duty_table_normal[4] = 
@@ -280,12 +303,6 @@ static const u8 sNesNoiseShortTable[] =
     0x7F,0x7F,0x7F,0x7F, 0x60,0x20,0x00,0x00, 0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
     0x20,0x60,0x7F,0x7F, 0x60,0x20,0x00,0x00, 0x20,0x60,0x7F,0x7F, 0x20,0x60,0x7F,0x7F
 };
-
-static const Uint8  *square_duty_table;
-static const Uint32 *noise_time_period_table;
-static const Uint32 *dpcm_freq_table;
-static const Uint32 *frame_seq_4;
-static const Uint32 *frame_seq_5;
 
 __inline static void lengthCounterStep(LENGTHCOUNTER *lc)
 {
@@ -428,8 +445,8 @@ static void nesApuSoundPulseUpdateHw(NESAPU_SQUARE *ch, DS_PSG_Channel ds_chan, 
     {
         REG_SOUNDxTMR(ds_chan) = ds_timer;
         REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PSG | 
-            SOUNDCNT_MODE_LOOP | ds_duty | 
-            SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
+                                 SOUNDCNT_MODE_LOOP | ds_duty | 
+                                 SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
     }
     else
     {
@@ -562,11 +579,189 @@ static void nesApuSoundNoiseUpdateHw(NESAPU_NOISE *ch, DS_PSG_Channel ds_chan, i
     }
 }
 
+__inline static void nesApuSoundDmcRead(NESAPU_DPCM *ch)
+{
+    char ** memtbl = IPC_MEMTBL;
+    // If the address exceeds 16 bits, wraps the range $8000-$FFFF
+    if (ch->adr > 0xFFFF) 
+    {
+        ch->adr = 0x8000 + (ch->adr & 0x7FFF);
+    }
+
+    int addr = ch->adr;
+    // (addr >> 13) - 4 converts $8000-$FFFF to indexes 0-3 for 8KB blocks
+    ch->input = memtbl[(addr >> 13) - 4][addr & 0x1FFF];
+    ch->adr++; 
+}
+
+__inline static void nesApuSoundDmcStart(NESAPU_DPCM *ch)
+{
+	ch->adr = 0xC000 | ((Uint16)ch->start_adr << 6);
+    ch->length = ((Uint16)ch->start_length << 4) + 1; // Must be in bytes
+    ch->bit_count = 0;
+	ch->irq_report = 0;
+	nesApuSoundDmcRead(ch);
+}
+
+/**
+ * @brief Frame-synchronized NES DMC ($4011) DAC write reconstruction.
+ *
+ * NES DMC raw PCM writes ($4011) require precise timing, but synchronizing
+ * ARM9 and ARM7 in real time on the Nintendo DS is costly and unreliable.
+ * Instead of forwarding each write through IPC or FIFO, ARM9 timestamps
+ * each $4011 write using the current NES scanline and stores it in shared
+ * IPC memory.
+ *
+ * ARM7 generates audio at the defined [DS_SOUND_FREQUENCY] rate and reconstructs the timing
+ * by mapping each produced audio sample to a corresponding NES scanline
+ * within the current frame. When a valid timestamped write is detected,
+ * the DMC DAC output is updated at the correct point in the audio timeline.
+ */
+inline static void nesApuReplayDmcPcmWrites(NESAPU_DPCM *ch)
+{
+    if (IPC_PCM_SYNC != last_pcm_sync)
+    {
+        last_pcm_sync = IPC_PCM_SYNC;
+        ch->pt_raw = 0;
+        last_processed_line = 0;
+    }
+
+    ch->pt_raw += ch->cps;
+
+    int current_line = ch->pt_raw / ch->lp;
+    if (current_line > NES_SCANLINES)
+    {
+        current_line = NES_SCANLINES; // Safety clamp
+    }
+
+    unsigned char bank_to_read = IPC_PCM_SELECT ^ 1;
+    unsigned char *raw_pcm_buffer = (bank_to_read == 0) ? IPC_PCMDATA_0 : IPC_PCMDATA_1;
+    for (int i = last_processed_line; i <= current_line; i++)
+    {
+        if (raw_pcm_buffer[i] & 0x80)
+        {
+            ch->dacout = raw_pcm_buffer[i] & 0x7F;
+            raw_pcm_buffer[i] = 0;
+        }
+    }
+
+    last_processed_line = current_line;
+}
+
+// Fills the ring buffer advancing the DMC emulation, must be called in the main audio loop
+static void nesApuFillDmcBuffer(int samples_to_generate, u32 apu_clock)
+{
+    NESAPU_DPCM *ch = &apu.dpcm;
+    int cps_fp = ch->cps;
+
+    for (int i = 0; i < samples_to_generate; i++)
+    {
+        // RAW PCM ($4011)
+        nesApuReplayDmcPcmWrites(ch);
+
+        // DPCM
+        dmc_cycles_accumulator += cps_fp;
+        u32 period = ch->wl ? ch->wl : 428; // NES DPCM Period
+        u32 period_fp = period << CPS_SHIFT;
+
+        // Process DPCM steps in this sample
+        while (dmc_cycles_accumulator >= period_fp)
+        {
+            dmc_cycles_accumulator -= period_fp;
+
+            // (Output Unit)
+            // Only process if there are remaining bits in the current 8 bit cycle
+            // and if we aren't muted
+            if (ch->key && ch->length > 0)
+            {
+                // Process Counter
+                if (ch->input & 1)
+                {
+                    if (ch->dacout <= 125)
+                    {
+                        ch->dacout += 2;
+                    }
+                }
+                else
+                {
+                    if (ch->dacout >= 2)
+                    {
+                        ch->dacout -= 2;
+                    }
+                }
+
+                // Shift the register
+                ch->input >>= 1;
+                // Bit counter (8bit cycle per byte)
+			    // We use ch->bit_count to emulate the NES 8bit internal counter)
+                ch->bit_count++;
+                if (ch->bit_count >= 8)
+                {
+                    ch->bit_count = 0;
+                    // Try to reload buffer from memory
+                    if (ch->length > 0)
+                    {
+                        nesApuSoundDmcRead(ch); // Reads the next byte from the IPC channel
+                        ch->length--; // Decrements remaining bytes
+                        if (ch->length == 0)
+                        {
+                            if (ch->loop_enable)
+                            {
+                                nesApuSoundDmcStart(ch); // Resets
+                            }
+                            else if (ch->irq_enable)
+                            {
+                                apu.dpcm.irq_report |= APU_STATUS_DMC_IRQ; // Raises a DMC IRQ
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Ring buffer output
+        s8 sample_out = 0;
+        if (!ch->mute)
+        {
+            // Convert to bipolar
+            sample_out = (s8)((int)ch->dacout - 64) << DMC_VOL_FACTOR;
+        }
+
+        dmc_ring_buffer[dmc_write_cursor] = sample_out;
+        dmc_write_cursor = (dmc_write_cursor + 1) & DMC_MASK;
+    }
+}
+
+/// @brief Updates the DMC channel using a DS hardware channel.
+/// @param ch       Pointer to the NES DPCM state.
+/// @param ds_chan  DS Channel (0-15).
+static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int pan)
+{
+    // Init ring buffer
+    if (!dmc_hw_initialized || !snd_isChannelPlaying(ds_chan))
+    {
+        memset(dmc_ring_buffer, 0, sizeof(dmc_ring_buffer));
+        dmc_write_cursor = MIXBUFSIZE << 1;
+        dmc_cycles_accumulator = 0;
+
+        snd_stopChannel(ds_chan);
+
+        REG_SOUNDxSAD(ds_chan) = (u32)dmc_ring_buffer;
+        REG_SOUNDxLEN(ds_chan) = DMC_BUF_SIZE >> 2;
+        REG_SOUNDxPNT(ds_chan) = 0;
+        REG_SOUNDxTMR(ds_chan) = TIMER_NFREQ;
+        REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PCM8 | 
+                                SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(127);
+
+        dmc_hw_initialized = true;
+    }
+}
+
 /// @brief Update the DS hardware channel renders. Writes change the sound INSTANTLY.
 //         Always call this after the software sound renderers to avoid sound latency.
 /// @param nes_apu_clock NES APU clock frequency.
 __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
 {
+    // Set channel pan if the stereo flag is enabled
     u32 pu1_pan, pu2_pan;
     if (apu_cfg.stereo)
     {
@@ -578,6 +773,7 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
         pu1_pan = 64;
         pu2_pan = 64;
     }
+
 	// Check if the APU flags have any of the channels muted
     (apu_cfg.pu1raw)
         ? snd_stopChannel(PSG_APU_SQUARE_1_CH)
@@ -594,6 +790,10 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
     (apu_cfg.noiraw)
         ? snd_stopChannel(PSG_APU_NOISE_CH)
         : nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH, nes_apu_clock);
+
+    (apu_cfg.dmcraw)
+        ? snd_stopChannel(PSG_APU_DMC_CH)
+        : nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH, PSG_DMC_PAN_CH);
 }
 
 /// @brief Stops all the hardware DS channels
@@ -603,6 +803,7 @@ void nesApuSoundHwStop()
     snd_stopChannel(PSG_APU_SQUARE_2_CH);
     snd_stopChannel(PSG_APU_TRIANGLE_CH);
     snd_stopChannel(PSG_APU_NOISE_CH);
+    snd_stopChannel(PSG_APU_DMC_CH);
 }
 
 __inline static void nesApuBlipInit(int apu_clock_rate, int sample_rate)
@@ -828,83 +1029,6 @@ __inline static void nesApuSoundNoiseRenderBlipSlice(NESAPU_NOISE *ch, blip_t* b
             ch->last_amp = new_amp;
         }
     }
-}
-
-__inline static void nesApuSoundDmcRead(NESAPU_DPCM *ch)
-{
-    char ** memtbl = IPC_MEMTBL;
-    // If the address exceeds 16 bits, wraps the range $8000-$FFFF
-    if (ch->adr > 0xFFFF) 
-    {
-        ch->adr = 0x8000 + (ch->adr & 0x7FFF);
-    }
-
-    int addr = ch->adr;
-    // (addr >> 13) - 4 converts $8000-$FFFF to indexes 0-3 for 8KB blocks
-    ch->input = memtbl[(addr >> 13) - 4][addr & 0x1FFF];
-
-    ch->adr++; 
-}
-
-__inline static void nesApuSoundDmcStart(NESAPU_DPCM *ch)
-{
-	ch->adr = 0xC000 | ((Uint16)ch->start_adr << 6);
-    ch->length = ((Uint16)ch->start_length << 4) + 1; // Must be in bytes
-    ch->bit_count = 0;
-	ch->irq_report = 0;
-	nesApuSoundDmcRead(ch);
-}
-
-// DS side NES Frame Counter Increments on each generated sample.
-int raw_pcm_idx = 0;
-
-// Called in the main loop, we need it to be reset each DS frame
-void apuVblankSync()
-{
-    raw_pcm_idx = 0;
-}
-
-/**
- * @brief Frame-synchronized NES DMC ($4011) DAC write reconstruction.
- *
- * NES DMC raw PCM writes ($4011) require precise timing, but synchronizing
- * ARM9 and ARM7 in real time on the Nintendo DS is costly and unreliable.
- * Instead of forwarding each write through IPC or FIFO, ARM9 timestamps
- * each $4011 write using the current NES scanline and stores it in shared
- * IPC memory.
- *
- * ARM7 generates audio at the defined [DS_SOUND_FREQUENCY] rate and reconstructs the timing
- * by mapping each produced audio sample to a corresponding NES scanline
- * within the current frame. When a valid timestamped write is detected,
- * the DMC DAC output is updated at the correct point in the audio timeline.
- *
- * This method avoids tight CPU synchronization, is deterministic,
- * frame-perfect, and emulates the NES DMC DAC behavior despite
- * differing clocks between ARM9 and ARM7.
- */
-inline static void nesApuReplayDmcPcmWrites(NESAPU_DPCM *ch)
-{
-	// RAW PCM samples must be rendered frame-perfect, hence this "async" method
-	// This emulates RAW PCM sample fetching in DS speeds.
-
-	unsigned char *raw_pcm_buffer = (unsigned char *)IPC_PCMDATA;
-	// Sample Rate = Number of 32kHz samples that fit in 1/60 seconds.
-	int samp_rate = SAMPLES_PER_DS_FRAME;
-    
-	// If for any reason the audio requests more than what we calculate in one frame
-    // (samp_rate), we limit the index to avoid reading garbage
-    int current_idx = raw_pcm_idx;
-    if (current_idx >= samp_rate)
-	{
-		current_idx = samp_rate - 1;
-	}
-    int pcm_idx = (current_idx * NES_SCANLINES) / samp_rate;
-    if (raw_pcm_buffer[pcm_idx] & 0x80) 
-    {
-        ch->dacout = raw_pcm_buffer[pcm_idx] & 0x7F;
-        raw_pcm_buffer[pcm_idx] = 0; // Flush buffer after consume to avoid garbage leftovers
-    }
-	raw_pcm_idx++;
 }
 
 __inline static void nesApuSoundDmcRenderBlipSlice(NESAPU_DPCM *ch, blip_t* blip_buffer, int clocks, int time_offset, bool is_muted)
@@ -1137,6 +1261,12 @@ void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer)
     
     // DMC is a sample channel, it doesn't need any counter update.
     nesApuSoundDmcRenderBlipSlice(&apu.dpcm, master_blip, total_clocks, 0, apu_cfg.dmc);
+
+    // Init HW DMC ring buffer
+    if (apu_cfg.hw_render)
+    {
+        nesApuFillDmcBuffer(sample_count, nes_apu_clock);
+    }
 
     // Mix everything
     blip_end_frame(master_blip, total_clocks);
@@ -1481,8 +1611,13 @@ static void apuSyncConfigCache(bool region_flag)
 // We no longer need cps calculations now, since blip doesn't render per-sample
 static void __fastcall apuSoundReset(void)
 {
-	// Set APU flags
+	// Set APU regional flags and cps
 	uint32_t nes_apu_clock = apu_cfg.region_pal ? NES_CPU_PAL : NES_CPU_NTSC;
+    uint32_t dmc_cps = getFixedPointStep(nes_apu_clock, DS_SOUND_FREQUENCY, CPS_SHIFT);
+    uint32_t line_period = apu_cfg.region_pal
+        ? (3410u << (CPS_SHIFT - 5)) / 1
+        : (341u << CPS_SHIFT) / 3;
+
 	apuSyncConfigCache(apu_cfg.region_pal);
 
 	// blip_buf is now in charge of the NES -> DS rates.
@@ -1493,6 +1628,8 @@ static void __fastcall apuSoundReset(void)
 	memset(&apu, 0, sizeof(APUSOUND));
     apu.noise.rng = 1; // Noise channel must be inited with 1
     apu.dpcm.first = 1;
+    apu.dpcm.cps = dmc_cps; // DMC cycles per sample
+    apu.dpcm.lp = line_period; // RAW PCM line_period
     apu.regs[0x17] = 0x00; // Spec: Init $4017 reg en 4 step mode (0x00)
 
 	for (int i = 0; i <= 0x17; i++)

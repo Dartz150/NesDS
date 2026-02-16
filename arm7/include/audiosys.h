@@ -17,7 +17,7 @@ extern "C" {
 /* 31 - log2(NES_BASECYCLES/(12*MIN_FREQ)) > CPS_BITS  */
 /* MIN_FREQ:11025 23.6 > CPS_BITS */
 /* 32-12(max spd) > CPS_BITS */
-#define CPS_SHIFT 18
+#define CPS_SHIFT 16
 
 typedef void (__fastcall *AUDIOHANDLER2)(Int32 *p);
 typedef Int32 (__fastcall *AUDIOHANDLER)(void);
@@ -42,6 +42,7 @@ typedef struct
     bool pu2raw;
 	bool triraw;
     bool noiraw;
+	bool dmcraw;
 	bool pu1;
     bool pu2;
     bool noi;

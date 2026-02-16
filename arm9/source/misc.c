@@ -12,6 +12,7 @@
 int save_slots = 0;
 int slots_num = 0;
 bool use_saves_dir = false;
+unsigned char pcm_bank;
 
 // a bad idea...
 void reg4015interrupt(u32 msg, void *none)
@@ -32,15 +33,18 @@ void reg4015interrupt(u32 msg, void *none)
 void writeAPU(u32 val, u32 addr) 
 {
 	// We can't process this data directly since we would need to sync the ARM7 and the
-	// ARM9 very tightly, which is costly. We use this clever hack instead.
-	if (addr == 0x4011) 
+	// ARM9 very tightly, which is costly. We use this sync method instead.
+	if (addr == 0x4011)
 	{
-        // Instead of sending through the same FIFO channel or wait,
-		// We note the value in the time history of the current frame.
-        // __scanline is our timestamp.
-		unsigned char *out = IPC_PCMDATA;
-        out[__scanline] = val | 0x80;
-    } 
+		// Store RAW PCM data in shared memory
+        unsigned char *out = (pcm_bank == 0) ? IPC_PCMDATA_0 : IPC_PCMDATA_1;
+        
+        if (__scanline <= 261)
+		{
+            // Set bit 0x80 as the "write flag"
+            out[__scanline] = (val & 0x7F) | 0x80;
+        }
+    }
 	else
 	{
 		if (IPC_APUW - IPC_APUR < 256 && addr != 0x4011) 
@@ -82,10 +86,24 @@ void writeAPU(u32 val, u32 addr)
 			{
 				fifoSendValue32(FIFO_USER_07, (addr << 8) | val);
 				IPC_APUW++;
-				IPC_APUWRITE;
+				//IPC_APUWRITE;
 			}
 		}
 	}
+}
+
+// Call this each time a NES frame ends (emulation VBlank) for RAW PCM writes syncing
+void nesFrameEnd()
+{
+    pcm_bank ^= 1; 
+    IPC_PCM_SELECT = pcm_bank;
+    
+    // ARM7 will only sync if it receives bit 0x80.
+    unsigned char *next_bank = (pcm_bank == 0) ? IPC_PCMDATA_0 : IPC_PCMDATA_1;
+    memset((void*)next_bank, 0, 262);
+
+    DC_FlushRange((void*)(IPC + 128), 524); 
+    IPC_PCM_SYNC++;
 }
 
 /*****************************

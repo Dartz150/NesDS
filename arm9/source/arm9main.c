@@ -305,6 +305,7 @@ void play() {
 
 		if (!(__emuflags & PALTIMING && global_playcount == 6)) {
 			EMU_Run(); //run a frame
+			nesFrameEnd(); // Sync RAW PCM APU writes to the ARM7
 			framecount++;
 			if(framecount > 8) {	//save state every 9th frame
 				framecount -= 9;
