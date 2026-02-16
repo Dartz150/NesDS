@@ -13,7 +13,6 @@ extern "C" {
 #define NES_CPU_NTSC 1789773
 #define NES_CPU_PAL  1662607
 
-
 /* 31 - log2(NES_BASECYCLES/(12*MIN_FREQ)) > CPS_BITS  */
 /* MIN_FREQ:11025 23.6 > CPS_BITS */
 /* 32-12(max spd) > CPS_BITS */
@@ -61,6 +60,7 @@ void apuSoundInstall(void);
 void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph);
 Uint32 getFixedPointStep(Uint32 p1, Uint32 p2, Uint32 fix);
 void applyApuStateMask(u32 mask);
+u16 nesToDsTimer(Uint32 nes_wl, Uint32 apu_clock, Uint8 clock_shift, Uint8 time_offset);
 
 // APU mixer status flags
 void getApuCurrentRegion();

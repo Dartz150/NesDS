@@ -66,6 +66,14 @@ Uint32 getFixedPointStep(Uint32 clock, Uint32 rate, Uint32 shift)
     return (Uint32)((clock_shifted + (rate >> 1)) / rate);
 }
 
+u16 nesToDsTimer(Uint32 nes_wl, Uint32 apu_clock, Uint8 clock_shift, Uint8 time_offset)
+{
+    uint64_t bus_clock = DS_BUS_CLOCK >> 1; // Sound hardware runs at half the DS Bus Clock
+    uint32_t ratio = (bus_clock * clock_shift * (nes_wl + time_offset)) / apu_clock;
+
+    return (u16)((DS_SOUND_FREQUENCY << 1) - ratio);
+}
+
 // Set APU status flags sent by the ARM9 to the ARM7 side
 void applyApuStateMask(u32 mask) 
 {

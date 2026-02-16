@@ -4,11 +4,15 @@
 #include "handler.h"
 #include "c_defs.h"
 #include "s_vrc6.h"
+#include "soundChannel.h"
 
 // (:::) VRC6 AUDIO ENGINE (:::) //
 // Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio and previous code by "huiminghao".
 
-#define VRC6_MIX_FACTOR 319 //  19,500 (NES pulse weight) / (15 + 15 + 31 = 61) ≈ 319
+// Pulse channels must be PSG capable channels (8 - 15), channel 0/1 reserved for PCM16 buffers
+#define PSG_VRC_SAW_CH          2
+#define PSG_VRC_SQUARE_1_CH     DS_PSG_CH9
+#define PSG_VRC_SQUARE_2_CH     DS_PSG_CH10
 
 typedef struct
 {
@@ -42,6 +46,48 @@ typedef struct
 
 static VRC6SOUND vrc6s;
 
+// Duty Cycle modes missing in the PSG mode on the DS
+[[gnu::aligned(4)]]
+static const s8 sVrc6Duty_1_16[] = // 1/16
+{ 
+    127, -127, -127, -127, -127, -127, -127, -127,
+    -127, -127, -127, -127, -127, -127, -127, -127
+};
+
+[[gnu::aligned(4)]]
+static const s8 sVrc6Duty_3_16[] = // 3/16
+{ 
+    127,  127,  127, -127, -127, -127, -127, -127,
+    -127, -127, -127, -127, -127, -127, -127, -127
+};
+
+[[gnu::aligned(4)]]
+static const s8 sVrc6Duty_5_16[] = // 5/16
+{ 
+    127,  127,  127,  127,  127, -127, -127, -127,
+    -127, -127, -127, -127, -127, -127, -127, -127
+};
+
+[[gnu::aligned(4)]]
+static const s8 sVrc6Duty_7_16[] = // 7/16
+{ 
+    127,  127,  127,  127,  127,  127,  127, -127,
+    -127, -127, -127, -127, -127, -127, -127, -127 
+};
+
+[[gnu::aligned(4)]]
+static const s8 sSquareFullDuty[] = // 100
+{
+    127, 127, 127, 127 
+};
+
+[[gnu::aligned(4)]]
+static const s8 sVrc6SawTable28[] = // Two cycles (14 steps)
+{
+    -64, -64, -43, -43, -21, -21, 0, 0, 21, 21, 43, 43, 64, 64,
+    -64, -64, -43, -43, -21, -21, 0, 0, 21, 21, 43, 43, 64, 64
+};
+
 /// @brief On some boards (Mapper 26), the A0 and A1 lines were switched, so for those, 
 /// registers will need adjustment ($x001 will become $x002 and vice versa). 
 static void VRC6SoundSetPulseLineRegs()
@@ -54,81 +100,187 @@ static void VRC6SoundSetPulseLineRegs()
     vrc6s.p_low  = is_vrc6_24 ? 1 : 2;
 }
 
-static Int32 VRC6SoundSquareRender(VRC6_SQUARE *ch, bool is_muted)
-{
-	// When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
-	// and the duty cycle is immediately reset and halted.
-	if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80) || is_muted) 
-    {
-        return 0;
-    }
-
-    ch->cycles -= ch->cps;
-    while (ch->cycles < 0)
-    {
-        ch->cycles += ch->spd;
-        // Spec: this counts from 15 to 0
-        if (ch->adr == 0) ch->adr = 15;
-        else ch->adr--;
-    }
-    
-    Uint8 volume = ch->regs[0] & 0x0F;
-    Uint8 duty   = (ch->regs[0] >> 4) & 0x07;
-    bool mode    = (ch->regs[0] & 0x80); // Bit 7 from the first reg is Mode
-
-    // If Mode is 1, ignore duty and return volume.
-    if (mode) return volume;
-
-    // If the current step is <= Duty, return volume, otherwise 0.
-    // This generates a inverted pulse, per the nesDev spec.
-    return (ch->adr <= duty) ? volume : 0;
-}
-
-static Int32 VRC6SoundSawRender(VRC6_SAW *ch, bool is_muted)
+static void vrc6SoundSquareUpdateHw(VRC6_SQUARE *ch, int ds_chan, int pan)
 {
     // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
-    if (!ch->spd || ch->mute || !(ch->regs[vrc6s.p_high] & 0x80) || is_muted)
+    u32 vrc_wl = ((ch->regs[vrc6s.p_high] & 0x0F) << 8) | ch->regs[vrc6s.p_low];
+    bool is_enabled = (ch->regs[vrc6s.p_high] & 0x80);
+    u8 vrc_duty = (ch->regs[0] >> 4) & 0x07;
+    bool duty_100 = (ch->regs[0] & 0x80); // Bit 7 from the first reg is duty mode
+
+    if (vrc_wl < 8 || !is_enabled || ch->mute)
     {
-        return 0;
+        if (snd_isChannelPlaying(ds_chan)) snd_stopChannel(ds_chan);
+        return;
     }
 
-    ch->cycles -= ch->cps;
-    while (ch->cycles < 0)
+    // Volume and Timers
+    u8 volume = ch->regs[0] & 0x0F;
+    u16 ds_timer;
+    u32 ds_vol = volume << 1;
+
+    // The DS PSG sound channel mode doesn't support all the duty modes required
+    // by the VRC6 pulses, so we need to simulate the missing duty modes.
+    // Even duty values use the PSG mode, odds use the PCM8 mode as a wave oscillator.
+    const s8* pcm_duty = NULL;
+    u32 psg_duty = 0;
+    bool use_pcm8 = false;
+
+    if (duty_100)
     {
-        ch->cycles += ch->spd;
-        // Increment phase (0..13)
-        ch->adr++;
-        // Accumulator increments only on even phases
-        if ((ch->adr & 1) == 0)
+        use_pcm8 = true;
+        pcm_duty = sSquareFullDuty;
+    }
+    else
+    {
+        switch (vrc_duty)
         {
-            if (ch->adr < 14) 
+            case 0: use_pcm8 = true; pcm_duty = sVrc6Duty_1_16; break; // 1/16
+            case 1: psg_duty = SOUNDCNT_DUTY_12_5; break;              // 2/16
+            case 2: use_pcm8 = true; pcm_duty = sVrc6Duty_3_16; break; // 3/16
+            case 3: psg_duty = SOUNDCNT_DUTY_25_0; break;              // 4/16
+            case 4: use_pcm8 = true; pcm_duty = sVrc6Duty_5_16; break; // 5/16
+            case 5: psg_duty = SOUNDCNT_DUTY_37_5; break;              // 6/16
+            case 6: use_pcm8 = true; pcm_duty = sVrc6Duty_7_16; break; // 7/16
+            case 7: psg_duty = SOUNDCNT_DUTY_50_0; break;              // 8/16
+        }
+    }
+
+     // PCM8 mode runs like an oscillator, using wavetables as the waveform source.
+    if (use_pcm8)
+    {
+        // PCM8 with 16 a bit table, shift 1 so 1 byte = 1 WL tick
+        ds_timer = nesToDsTimer(vrc_wl, NES_CPU_NTSC, 1, 1);
+        
+        if (!snd_isChannelPlaying(ds_chan) || (REG_SOUNDxCNT(ds_chan) & SOUNDCNT_FORMAT_PSG))
+        {
+            snd_stopChannel(ds_chan);
+            REG_SOUNDxSAD(ds_chan) = (u32)pcm_duty;
+            REG_SOUNDxLEN(ds_chan) = 4; // 16 byte wavetables = 16 byte / 4. TODO: Pass current table length.
+            REG_SOUNDxPNT(ds_chan) = 0;
+            REG_SOUNDxTMR(ds_chan) = ds_timer;
+            REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PCM8 | 
+                                     SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
+        }
+        else
+        {
+            REG_SOUNDxTMR(ds_chan) = ds_timer;
+            REG_SOUNDxCNT(ds_chan) = (REG_SOUNDxCNT(ds_chan) & ~0x7F) | SOUNDCNT_VOLUME(ds_vol);
+            // Each time the duty value changes, we must update the duty source
+            if (REG_SOUNDxSAD(ds_chan) != (u32)pcm_duty)
             {
-                ch->output += (ch->regs[0] & 0x3F); // Accum Rate
+                REG_SOUNDxSAD(ds_chan) = (u32)pcm_duty;
             }
         }
+    }
+    // PSG Mode runs the square waves as normal, using its internal duty cycle modes.
+    else
+    {
+        // The DS PSG hardware already does the /16 div internally, shift 2
+        // VRC6 titles are always NTSC
+        ds_timer = nesToDsTimer(vrc_wl, NES_CPU_NTSC, 2, 1);
 
-        // Reset after 14 phases
-        if (ch->adr >= 14)
+        if (!snd_isChannelPlaying(ds_chan) || !(REG_SOUNDxCNT(ds_chan) & SOUNDCNT_FORMAT_PSG))
         {
-            ch->adr = 0;
-            ch->output = 0;
+            snd_stopChannel(ds_chan);
+            REG_SOUNDxTMR(ds_chan) = ds_timer;
+            REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PSG | 
+                                     SOUNDCNT_MODE_LOOP | psg_duty | 
+                                     SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
+        }
+        else
+        {
+            REG_SOUNDxTMR(ds_chan) = ds_timer;
+            u32 current_cnt = REG_SOUNDxCNT(ds_chan);
+            u32 new_cnt = (current_cnt & ~(0x7F | SOUNDCNT_DUTY_MASK)) | ds_vol | psg_duty;
+            if (current_cnt != new_cnt)
+            {
+                REG_SOUNDxCNT(ds_chan) = new_cnt;
+            }
         }
     }
-
-    // Return 5 higher bits from the accum (0-31)
-    return (ch->output >> 3) & 0x1F;
 }
 
-// VRC6 Mixer. NesDev: "Lineal 6 bit sum (max 61: 15 + 15 + 31)"
-int32_t VRC6SoundRender() 
+// We also use a PCM8 channel as a wave oscillator for the Saw channel
+static void vrc6SoundSawUpdateHw(VRC6_SAW *ch, int ds_chan, int pan)
 {
-    int32_t sum = 0;
-    sum += VRC6SoundSquareRender(&vrc6s.square[0], apu_cfg.vrc_p1);
-    sum += VRC6SoundSquareRender(&vrc6s.square[1], apu_cfg.vrc_p2);
-    sum += VRC6SoundSawRender(&vrc6s.saw, apu_cfg.vrc_saw);
+    // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
+	// and the duty cycle is immediately reset and halted.
+    u32 vrc_wl = ((ch->regs[vrc6s.p_high] & 0x0F) << 8) | ch->regs[vrc6s.p_low];
+    bool is_enabled = (ch->regs[vrc6s.p_high] & 0x80);
+
+    if (vrc_wl < 8 || !is_enabled || ch->mute)
+    {
+        if (snd_isChannelPlaying(ds_chan)) snd_stopChannel(ds_chan);
+        return;
+    }
+
+    // 1 DS sample = 1 VRC6 base cycle (WL+1).
+    // VRC6 titles are always NTSC
+    u16 ds_timer = nesToDsTimer(vrc_wl, NES_CPU_NTSC, 1, 1);
     
-    return sum * VRC6_MIX_FACTOR;
+    // The Saw is an accumulator that increments only on even phases,
+    // we simulate with a pre-accumulated 28 byte table.
+    u8 ds_vol = (ch->regs[0] & 0x3F) * 3; // Volume: 6 bits to 7 bits (0..63 -> 0..126)
+
+    if (!snd_isChannelPlaying(ds_chan))
+    {
+        REG_SOUNDxSAD(ds_chan) = (u32)sVrc6SawTable28;
+        REG_SOUNDxLEN(ds_chan) = sizeof(sVrc6SawTable28) >> 2;
+        REG_SOUNDxPNT(ds_chan) = 0;
+        REG_SOUNDxTMR(ds_chan) = ds_timer;
+        REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PCM8 | 
+                                 SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(ds_vol);
+    }
+    else
+    {
+        REG_SOUNDxTMR(ds_chan) = ds_timer;
+        u32 current_cnt = REG_SOUNDxCNT(ds_chan);
+        // We only update the volume to avoid sound clicks, keep the sound format
+        u32 new_cnt = (current_cnt & ~0x7F) | SOUNDCNT_VOLUME(ds_vol);
+        if (current_cnt != new_cnt)
+        {
+            REG_SOUNDxCNT(ds_chan) = new_cnt;
+        }
+    }
+}
+
+void VRC6SoundHwUpdate()
+{
+    if (!has_vrc6) return;
+
+    // Panning
+    u32 v_pu1_pan, v_pu2_pan;
+    if (apu_cfg.stereo)
+    {
+        v_pu1_pan = 72;
+        v_pu2_pan = 56;
+    }
+    else
+    {
+        v_pu1_pan = 64;
+        v_pu2_pan = 64;
+    }
+
+    (apu_cfg.vrc_p1)
+        ? snd_stopChannel(PSG_VRC_SQUARE_1_CH)
+        : vrc6SoundSquareUpdateHw(&vrc6s.square[0], PSG_VRC_SQUARE_1_CH, v_pu1_pan);
+
+    (apu_cfg.vrc_p2)
+        ? snd_stopChannel(PSG_VRC_SQUARE_2_CH)
+        : vrc6SoundSquareUpdateHw(&vrc6s.square[1], PSG_VRC_SQUARE_2_CH, v_pu2_pan);
+
+    (apu_cfg.vrc_saw)
+        ? snd_stopChannel(PSG_VRC_SAW_CH)
+        : vrc6SoundSawUpdateHw(&vrc6s.saw, PSG_VRC_SAW_CH, 64);
+}
+
+void VRC6SoundHwStop()
+{
+    snd_stopChannel(PSG_VRC_SQUARE_1_CH);
+    snd_stopChannel(PSG_VRC_SQUARE_2_CH);
+    snd_stopChannel(PSG_VRC_SAW_CH);
 }
 
 static void VRC6SoundWriteSquare(VRC6_SQUARE *ch, Uint address, Uint value)
@@ -186,18 +338,6 @@ void VRC6SoundWriteB000(Uint address, Uint value)
     }
 }
 
-void VRC6SoundSquareReset(VRC6_SQUARE *ch)
-{
-	// There's no VRC6 PAL titles, always set this to NTSC
-	ch->cps = getFixedPointStep(NES_CPU_NTSC, DS_SOUND_FREQUENCY, CPS_SHIFT);
-}
-
-void __fastcall VRC6SoundSawReset(VRC6_SAW *ch)
-{
-	// There's no VRC6 PAL titles, always set this to NTSC
-	ch->cps = getFixedPointStep(NES_CPU_NTSC, DS_SOUND_FREQUENCY, CPS_SHIFT);
-}
-
 static NES_RESET_HANDLER s_vrc6_reset_handler[] =
 {
 	{ NES_RESET_SYS_NOMAL, VRC6SoundReset, }, 
@@ -208,9 +348,6 @@ void __fastcall VRC6SoundReset(void)
 {
 	XMEMSET(&vrc6s, 0, sizeof(VRC6SOUND));
     VRC6SoundSetPulseLineRegs();
-	VRC6SoundSquareReset(&vrc6s.square[0]);
-	VRC6SoundSquareReset(&vrc6s.square[1]);
-	VRC6SoundSawReset(&vrc6s.saw);
 }
 
 void VRC6SoundInstall(void)

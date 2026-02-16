@@ -7,7 +7,8 @@ extern "C" {
 // VRC6 Sound handlers
 void VRC6SoundInstall(void);
 void VRC6SoundReset(void);
-int32_t VRC6SoundRender();
+void VRC6SoundHwUpdate();
+void VRC6SoundHwStop();
 
 // VRC6 Write regs
 void VRC6SoundWrite9000(Uint address, Uint value);

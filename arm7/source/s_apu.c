@@ -23,9 +23,9 @@
 #define PSG_DMC_PAN_CH          64
 
 // DMC RING BUFFER DEFINES
-#define DMC_BUF_SIZE    512  // Potencia de 2 para facilitar el wrapping
-#define DMC_MASK        (DMC_BUF_SIZE - 1)
 #define DMC_VOL_FACTOR  1
+#define DMC_BUF_SIZE    (512)
+#define DMC_MASK        (DMC_BUF_SIZE - 1)
 
 // blip_buf Defines
 #define DELTA_VOL 9
@@ -263,19 +263,6 @@ static const s8 sNesTriangleTable[] =
 };
 
 [[gnu::aligned(4)]]
-static const s8 sNesSawTable[] =
-{
-    -64, -62, -60, -58, -56, -54, -52, -50,
-    -48, -46, -44, -42, -40, -38, -36, -34,
-    -32, -30, -28, -26, -24, -22, -20, -18,
-    -16, -14, -12, -10,  -8,  -6,  -4,  -2,
-      0,   2,   4,   6,   8,  10,  12,  14,
-     16,  18,  20,  22,  24,  26,  28,  30,
-     32,  34,  36,  38,  40,  42,  44,  46,
-     48,  50,  52,  54,  56,  58,  60,  62
-};
-
-[[gnu::aligned(4)]]
 static const u8 sNesNoiseShortTable[] =
 {
     // Feedback = bit0 ^ bit6 (93 step cycle * 4 + interpolation filter)
@@ -371,14 +358,6 @@ __inline static void sweepStep(SWEEP *sw, Uint32 *wl)
 			*wl += (*wl >> sw->shifter);
 		}
 	}
-}
-
-__inline static u16 nesToDsTimer(Uint32 nes_wl, Uint32 apu_clock, Uint8 clock_shift, Uint8 time_offset)
-{
-    uint64_t bus_clock = DS_BUS_CLOCK >> 1; // Sound hardware runs at half the DS Bus Clock
-    uint32_t ratio = (bus_clock * clock_shift * (nes_wl + time_offset)) / apu_clock;
-
-    return (u16)((DS_SOUND_FREQUENCY << 1) - ratio);
 }
 
 __inline static u32 nesDutyToDs(u8 duty_value)
@@ -804,6 +783,7 @@ void nesApuSoundHwStop()
     snd_stopChannel(PSG_APU_TRIANGLE_CH);
     snd_stopChannel(PSG_APU_NOISE_CH);
     snd_stopChannel(PSG_APU_DMC_CH);
+    VRC6SoundHwStop();
 }
 
 __inline static void nesApuBlipInit(int apu_clock_rate, int sample_rate)
@@ -1242,6 +1222,7 @@ void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer)
             {
                 nesApuSoundHwRender(nes_apu_clock);
             }
+            VRC6SoundHwUpdate();
         }
     }
 
