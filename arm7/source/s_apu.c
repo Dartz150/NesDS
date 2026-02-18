@@ -766,11 +766,7 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
 
     (apu_cfg.triraw)
         ? snd_stopChannel(PSG_APU_TRIANGLE_CH)
-        : nesApuSoundTriangleUpdateHw(&apu.triangle, PSG_APU_TRIANGLE_CH, PSG_TRIANGLE_PAN_CH, nes_apu_clock);   
-
-    (apu_cfg.noi)
-        ? snd_stopChannel(PSG_APU_NOISE_CH)
-        : nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH, nes_apu_clock);
+        : nesApuSoundTriangleUpdateHw(&apu.triangle, PSG_APU_TRIANGLE_CH, PSG_TRIANGLE_PAN_CH, nes_apu_clock);
 
     (apu_cfg.dmcraw)
         ? snd_stopChannel(PSG_APU_DMC_CH)
