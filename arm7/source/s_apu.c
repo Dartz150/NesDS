@@ -460,7 +460,7 @@ static void nesApuSoundTriangleUpdateHw(NESAPU_TRIANGLE *ch, DS_PSG_Channel ds_c
     u16 ds_timer = nesToDsTimer(ch->wl, apu_clock, 1, 1);
     
     // We need to cut the volume at ~75% because the table is interpoplated for normalization
-    u32 ds_vol = SOUNDCNT_VOLUME(80);
+    u32 ds_vol = SOUNDCNT_VOLUME(90);
 
     if (!snd_isChannelPlaying(ds_chan))
     {
