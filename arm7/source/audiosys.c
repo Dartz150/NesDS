@@ -87,14 +87,14 @@ void applyApuStateMask(u32 mask)
     apu_cfg.stereo       = (mask & APU_STAT_STEREO)       ? true : false;
 	apu_cfg.pu1raw 		 = (mask & APU_STAT_MUTE_P1) 	  ? true : false;
     apu_cfg.pu2raw 		 = (mask & APU_STAT_MUTE_P2) 	  ? true : false;
-    apu_cfg.noiraw 		 = (mask & APU_STAT_MUTE_NOI)     ? true : false;
+    //apu_cfg.noiraw 		 = (mask & APU_STAT_MUTE_NOI)     ? true : false;
 	apu_cfg.triraw       = (mask & APU_STAT_MUTE_TRI)  	  ? true : false;
 	apu_cfg.dmcraw    	 = (mask & APU_STAT_MUTE_DMC)  	  ? true : false;
 
 	// Set Sound Ch. mute masks
     apu_cfg.pu1 		 = apu_cfg.pu1raw || apu_cfg.hw_render; // We also need to check if the hw render is enabled.
     apu_cfg.pu2 		 = apu_cfg.pu2raw || apu_cfg.hw_render;
-    apu_cfg.noi		     = apu_cfg.noiraw || apu_cfg.hw_render;
+    apu_cfg.noi		     = (mask & APU_STAT_MUTE_NOI)     ? true : false;
 	apu_cfg.tri 		 = apu_cfg.triraw || apu_cfg.hw_render;
     apu_cfg.dmc    	 	 = apu_cfg.dmcraw || apu_cfg.hw_render;
     apu_cfg.fds    	     = (mask & APU_STAT_MUTE_FDS) 	  ? true : false;
