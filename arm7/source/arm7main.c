@@ -45,6 +45,17 @@ void resetApu()
 	IPC_APUR = 0;
 }
 
+// https://github.com/Gericom/GBARunner3/blob/develop/code/core/arm7/source/Sound/GbaSound7.c#L50
+// Clamps samples to a 16-bit range to prevent overflows in the DS mixer.
+__inline static int16_t clampSample16(int32_t inSample)
+{
+    // For a 16 bit range (-32768 to 32767)
+    int32_t outSample = inSample << 16;
+    if (inSample != (outSample >> 16))
+        outSample = 0x7FFFFFFF ^ (inSample >> 31);
+    return (int16_t)(outSample >> 16);
+}
+
 // blip_buf mixes everything, we no longer need to emulate the APU mixer or convert samples.
 void __fastcall soundMain(int active_chan)
 {
@@ -56,7 +67,21 @@ void __fastcall soundMain(int active_chan)
     // Render NES Sound frame. blip_buf already delivers centered PCM16 samples, prefect for the DS
     nesApuProcessBlipBufferChannels(MIXBUFSIZE, pcmL);
 
-    // Fill Buffers for the DS hardware (TODO: Handle filter and stereo using blip_buf)
+	// Add Sound Expansion samples if enabled
+    if (has_fds && !apu_cfg.fds)
+    {
+        for (int i = 0; i < MIXBUFSIZE; i++)
+        {
+            // Get FDS samples from the render
+            int32_t fds_sample = FDSSoundRender();
+
+            // Apply gain consistent with the nes APU
+            int32_t mixed = (int32_t)pcmL[i] + (fds_sample << 1);
+            pcmL[i] = clampSample16(mixed);
+        }
+    }
+
+    // Copy the final L buffer into the R Buffer
     memcpy(pcmR, pcmL, MIXBUFSIZE * sizeof(s16));
 
     readApu();
