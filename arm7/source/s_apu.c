@@ -853,7 +853,8 @@ static void nesApuFillDmcBuffer(int samples_to_generate, u32 apu_clock)
         if (!ch->mute)
         {
             // Convert to bipolar
-            sample_out = (s8)((int)ch->dacout - 64) << DMC_VOL_FACTOR;
+            int temp_sample = ((int)ch->dacout - 64) << DMC_VOL_FACTOR;
+            sample_out = (s8)temp_sample;
         }
 
         dmc_ring_buffer[dmc_write_cursor] = sample_out;
