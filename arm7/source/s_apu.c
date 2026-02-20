@@ -27,9 +27,13 @@
 #define DMC_BUF_SIZE    (512)
 #define DMC_MASK        (DMC_BUF_SIZE - 1)
 
+// NOISE RING BUFFER DEFINES
+#define NOISE_BUF_SIZE  (512)
+#define NOISE_MASK      (NOISE_BUF_SIZE - 1)
+
 // blip_buf Defines
-#define DELTA_VOL 9
-#define DMC_DELTA_VOL (DELTA_VOL - 1)
+#define DELTA_VOL       9
+#define DMC_DELTA_VOL   (DELTA_VOL - 1)
 
 /* ------------------------- */
 /*  NES INTERNAL SOUND(APU)  */
@@ -458,52 +462,68 @@ static void nesApuSoundTriangleUpdateHw(NESAPU_TRIANGLE *ch, DS_PSG_Channel ds_c
     }
 }
 
-#define NOISE_BUF_SIZE 512
-#define NOISE_MASK (NOISE_BUF_SIZE - 1)
-
-static s8 sNoiseRingBuffer[NOISE_BUF_SIZE] __attribute__((aligned(4)));
-static u32 sNoiseWriteCursor = 0;
-static u32 sNoiseAccumulator = 0;
-
+/**
+ * Renders the NES Noise channel using a software-based phase accumulator.
+ * This integrates the LFSR state changes over the DS sample period to 
+ * provide a clean PCM8 signal for the DS hardware mixer.
+ * Always call this in the main sound func.
+ */
 static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
 {
     NESAPU_NOISE *ch = &apu.noise;
-    u32 period = ch->wl; 
-    if (period < 4) period = 4;
+    u32 period = ch->wl; // Period in NES CPU cycles
+    
+    if (period < 4) 
+    {
+        period = 4; // Safety clamp
+    }
 
+    // Volume calculation (Envelope or Constant)
     u8 volume_nes = ch->ed.disable ? ch->ed.volume : ch->ed.counter;
-    s32 target_vol = (volume_nes << 3);
+    s32 target_vol = (volume_nes << 2); // Scale to PCM8 range
 
+    // Fixed-point conversion factors
     u32 clocks_per_sample_fp = (apu_clock << 8) / DS_SOUND_FREQUENCY;
     u32 period_fp = period << 8;
-    
-    u32 inv_clocks_fp = (1 << 24) / clocks_per_sample_fp; 
+    u32 inv_clocks_fp = (1 << 24) / clocks_per_sample_fp;
 
     for (int i = 0; i < samples_to_generate; i++)
     {
         s32 sample_accum = 0;
         u32 clocks_needed = clocks_per_sample_fp;
 
+        // Sub-sample integration loop:
+        // Ensures that noise state changes within a single DS sample are correctly averaged
         while (clocks_needed > 0)
         {
             u32 time_left_in_period = period_fp - sNoiseAccumulator;
             u32 step = (clocks_needed < time_left_in_period) ? clocks_needed : time_left_in_period;
 
+            // Determine current amplitude based on LFSR bit 0
             s32 current_amp = (ch->rng & 1) ? -target_vol : target_vol;
-            if (ch->lc.counter == 0 || ch->mute) current_amp = 0;
+
+            // Apply mute logic (Length counter or Mute flag)
+            if (ch->lc.counter == 0 || ch->mute)
+            {
+                current_amp = 0;
+            }
 
             sample_accum += current_amp * (s32)step;
             sNoiseAccumulator += step;
             clocks_needed -= step;
 
+            // When period is reached, clock the LFSR
             if (sNoiseAccumulator >= period_fp)
             {
+                // Spec: bit 0 XOR (bit 1 or bit 6, 15bit shift)
                 u16 feedback = (ch->rng & 1) ^ ((ch->rng >> (ch->rngshort ? 6 : 1)) & 1);
+                // New Amplitude
                 ch->rng = (ch->rng >> 1) | (feedback << 14);
                 sNoiseAccumulator = 0; 
             }
         }
 
+        // Finalize the average sample for this interval
         s32 final_sample = (s32)(((s64)sample_accum * inv_clocks_fp) >> 24);
 
         sNoiseRingBuffer[sNoiseWriteCursor] = (s8)final_sample;
@@ -511,12 +531,16 @@ static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
     }
 }
 
+/**
+ * Initializes and syncs the DS hardware channel for Noise playback.
+ * Uses PCM8 loop mode pointing to the software-filled ring buffer.
+ */
 static void nesApuSoundNoiseUpdateHw(NESAPU_NOISE *ch, DS_PSG_Channel ds_chan, int pan, u32 apu_clock)
 {
     if (!snd_isChannelPlaying(ds_chan))
     { 
         memset(sNoiseRingBuffer, 0, NOISE_BUF_SIZE);
-        sNoiseWriteCursor = 128; // Empezamos a escribir un poco adelante
+        sNoiseWriteCursor = 128; // Write ahead of the read pointer
         sNoiseAccumulator = 0;
 
         snd_stopChannel(ds_chan);
@@ -525,7 +549,7 @@ static void nesApuSoundNoiseUpdateHw(NESAPU_NOISE *ch, DS_PSG_Channel ds_chan, i
         REG_SOUNDxPNT(ds_chan) = 0;
         REG_SOUNDxTMR(ds_chan) = TIMER_NFREQ; 
         REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PCM8 | 
-                                 SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(48);
+                                 SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(100);
     }
 }
 
