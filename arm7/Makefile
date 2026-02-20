@@ -24,9 +24,11 @@ DATA     :=
 #---------------------------------------------------------------------------------
 ARCH := -marm -mthumb-interwork
 
-CFLAGS   := -g -Wall -O2\
-            $(ARCH) $(INCLUDE) -DARM7
-CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
+CFLAGS   := -g -Wall -O2 \
+          -mcpu=arm7tdmi -mtune=arm7tdmi -fomit-frame-pointer \
+          -ffast-math \
+          $(ARCH) $(INCLUDE) -DARM7
+CXXFLAGS := $(CFLAGS) -std=gnu++20 -fno-rtti -fno-exceptions -fno-threadsafe-statics
 ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=ds_arm7.specs -g $(ARCH) -Wl,--nmagic -Wl,-Map,$(notdir $*).map
 
