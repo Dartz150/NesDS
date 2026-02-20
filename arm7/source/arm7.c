@@ -68,6 +68,7 @@ int main()
 	// Keep the ARM7 mostly idle
 	while (1) 
 	{
+		apuVblankSync();
 		if ( 0 == (REG_KEYINPUT & (KEY_DOWN | KEY_B | KEY_L | KEY_R))) 
 		{
 			sys_exit();

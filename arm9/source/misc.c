@@ -36,14 +36,11 @@ void writeAPU(u32 val, u32 addr)
 	// ARM9 very tightly, which is costly. We use this sync method instead.
 	if (addr == 0x4011)
 	{
-		// Store RAW PCM data in shared memory
-        unsigned char *out = (pcm_bank == 0) ? IPC_PCMDATA_0 : IPC_PCMDATA_1;
-        
-        if (__scanline <= 261)
-		{
-            // Set bit 0x80 as the "write flag"
-            out[__scanline] = (val & 0x7F) | 0x80;
-        }
+        // Instead of sending through the same FIFO channel or wait,
+		// We note the value in the time history of the current frame.
+        // __scanline is our timestamp.
+		unsigned char *out = IPC_PCMDATA;
+        out[__scanline] = val | 0x80;
     }
 	else
 	{
@@ -90,20 +87,6 @@ void writeAPU(u32 val, u32 addr)
 			}
 		}
 	}
-}
-
-// Call this each time a NES frame ends (emulation VBlank) for RAW PCM writes syncing
-void nesFrameEnd()
-{
-    pcm_bank ^= 1; 
-    IPC_PCM_SELECT = pcm_bank;
-    
-    // ARM7 will only sync if it receives bit 0x80.
-    unsigned char *next_bank = (pcm_bank == 0) ? IPC_PCMDATA_0 : IPC_PCMDATA_1;
-    memset((void*)next_bank, 0, 262);
-
-    DC_FlushRange((void*)(IPC + 128), 524); 
-    IPC_PCM_SYNC++;
 }
 
 /*****************************

@@ -178,9 +178,10 @@ static s8 dmc_ring_buffer[DMC_BUF_SIZE] __attribute__((aligned(4)));
 static int dmc_write_cursor;
 static int dmc_cycles_accumulator;
 
-// DMC RAW PCM counters
-static int last_pcm_sync;
-static int last_processed_line;
+// Noise ring buffer
+static s8 sNoiseRingBuffer[NOISE_BUF_SIZE] __attribute__((aligned(4)));
+static u32 sNoiseWriteCursor = 0;
+static u32 sNoiseAccumulator = 0; // Accumulator for the phase counter
 
 // Square Duty LUT
 static const Uint8 square_duty_table_normal[4] = 
@@ -577,6 +578,15 @@ __inline static void nesApuSoundDmcStart(NESAPU_DPCM *ch)
 	nesApuSoundDmcRead(ch);
 }
 
+// DS side NES Frame Counter Increments on each generated sample.
+int raw_pcm_idx = 0;
+
+// Called in the main loop, we need it to be reset each DS frame
+void apuVblankSync()
+{
+    raw_pcm_idx = 0;
+}
+
 /**
  * @brief Frame-synchronized NES DMC ($4011) DAC write reconstruction.
  *
@@ -593,33 +603,27 @@ __inline static void nesApuSoundDmcStart(NESAPU_DPCM *ch)
  */
 inline static void nesApuReplayDmcPcmWrites(NESAPU_DPCM *ch)
 {
-    if (IPC_PCM_SYNC != last_pcm_sync)
+	// RAW PCM samples must be rendered frame-perfect, hence this "async" method
+	// This emulates RAW PCM sample fetching in DS speeds.
+
+	unsigned char *raw_pcm_buffer = (unsigned char *)IPC_PCMDATA;
+	// Sample Rate = Number of 32kHz samples that fit in 1/60 seconds.
+	int samp_rate = SAMPLES_PER_DS_FRAME;
+    
+	// If for any reason the audio requests more than what we calculate in one frame
+    // (samp_rate), we limit the index to avoid reading garbage
+    int current_idx = raw_pcm_idx;
+    if (current_idx >= samp_rate)
+	{
+		current_idx = samp_rate - 1;
+	}
+    int pcm_idx = (current_idx * NES_SCANLINES) / samp_rate;
+    if (raw_pcm_buffer[pcm_idx] & 0x80) 
     {
-        last_pcm_sync = IPC_PCM_SYNC;
-        ch->pt_raw = 0;
-        last_processed_line = 0;
+        ch->dacout = raw_pcm_buffer[pcm_idx] & 0x7F;
+        raw_pcm_buffer[pcm_idx] = 0; // Flush buffer after consume to avoid garbage leftovers
     }
-
-    ch->pt_raw += ch->cps;
-
-    int current_line = ch->pt_raw / ch->lp;
-    if (current_line > NES_SCANLINES)
-    {
-        current_line = NES_SCANLINES; // Safety clamp
-    }
-
-    unsigned char bank_to_read = IPC_PCM_SELECT ^ 1;
-    unsigned char *raw_pcm_buffer = (bank_to_read == 0) ? IPC_PCMDATA_0 : IPC_PCMDATA_1;
-    for (int i = last_processed_line; i <= current_line; i++)
-    {
-        if (raw_pcm_buffer[i] & 0x80)
-        {
-            ch->dacout = raw_pcm_buffer[i] & 0x7F;
-            raw_pcm_buffer[i] = 0;
-        }
-    }
-
-    last_processed_line = current_line;
+	raw_pcm_idx++;
 }
 
 // Fills the ring buffer advancing the DMC emulation, must be called in the main audio loop

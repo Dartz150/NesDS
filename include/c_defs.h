@@ -29,11 +29,9 @@
 #define IPC_APUW (*(volatile int *)(IPC+40))		//apu write start
 #define IPC_APUR (*(volatile int *)(IPC+44))		//apu write start
 #define IPC_MAPPER (*(volatile int *)(IPC+48))		//nes rom mapper
-// RAW PCM DATA AND SYNC BITS
-#define IPC_PCMDATA_0    ((volatile unsigned char *)(IPC + 128))       // Bank 0
-#define IPC_PCMDATA_1    ((volatile unsigned char *)(IPC + 128 + 262)) // Bank 1
-#define IPC_PCM_SELECT   (*(volatile unsigned char *)(IPC + 128 + 524)) // Indicates which bank to read
-#define IPC_PCM_SYNC (*(volatile u32 *)(IPC + 128 + 528)) // Frane counter for syncing
+#define IPC_PCMDATA		((volatile unsigned char *)(IPC + 128))	//used for raw pcm.
+#define IPC_APUWRITE ((unsigned int *)(IPC+512))		//apu write start
+#define IPC_AUDIODATA ((unsigned int *)(IPC+4096 + 512))	//audio data...
 
 //not implemented yet.
 
