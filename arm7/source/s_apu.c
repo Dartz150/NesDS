@@ -164,13 +164,13 @@ typedef struct
 
 static APUSOUND apu;
 static int apuirq;
-static int ptr_mixed;
-static blip_t* master_blip;
 static const Uint8  *square_duty_table;
 static const Uint32 *noise_time_period_table;
 static const Uint32 *dpcm_freq_table;
 static const Uint32 *frame_seq_4;
 static const Uint32 *frame_seq_5;
+int ptr_mixed;
+blip_t* master_blip;
 
 // DMC ring buffer
 static bool dmc_hw_initialized = false;
@@ -1134,7 +1134,7 @@ __inline static void nesApuSoundDmcRenderBlipSlice(NESAPU_DPCM *ch, blip_t* blip
 }
 
 // Main SW and HW sound render function
-void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer)
+void nesApuProcessBlipBufferChannels(int sample_count)
 {
     uint32_t nes_apu_clock = apu_cfg.region_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     int total_clocks = blip_clocks_needed(master_blip, sample_count);
@@ -1239,11 +1239,7 @@ void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer)
     {
         nesApuFillDmcBuffer(sample_count, nes_apu_clock);
     }
-
-    // Mix everything
     blip_end_frame(master_blip, total_clocks);
-    blip_read_samples(master_blip, output_buffer, sample_count, 0);
-    ptr_mixed = 0; // Always reset read pointer
 }
 
 void apuSoundWrite(Uint address, Uint value)

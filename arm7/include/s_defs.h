@@ -44,7 +44,7 @@ extern "C" {
 void nesApuSoundHwStop();
 
 // Bip Buffer processes all the APU channels now
-void nesApuProcessBlipBufferChannels(int sample_count, s16* output_buffer);
+void nesApuProcessBlipBufferChannels(int sample_count);
 void apuSoundInstall();
 void FDSSoundInstall();
 void readApu();

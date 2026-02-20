@@ -11,6 +11,9 @@ void APUSoundInstall(void);
 void APU4015Reg(void);
 void APUSoundWrite(Uint address, Uint value);
 
+extern blip_t* master_blip;
+extern int ptr_mixed;
+
 #ifdef __cplusplus
 }
 #endif

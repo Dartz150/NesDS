@@ -9,6 +9,11 @@
 #include "s_vrc6.h"
 #include "s_fds.h"
 
+// Information sources:
+// - https://www.nesdev.org/wiki/APU_Mixer
+// - https://problemkaputt.de/gbatek.htm#dssound
+// - https://stackoverflow.com/questions/14997850/fir-filter-implementation-in-c-programming
+
 // DS Hardware Defines
 
 // RIGHT CHANNEL
@@ -20,18 +25,16 @@
 #define L_VOL             SOUND_VOL(127)
 #define L_PAN             SOUND_PAN(127)
 
-// Information sources:
-// - https://www.nesdev.org/wiki/APU_Mixer
-// - https://problemkaputt.de/gbatek.htm#dssound
-// - https://stackoverflow.com/questions/14997850/fir-filter-implementation-in-c-programming
-
 // DS Mixer buffers
-static s16 buffer_L[MIXBUFSIZE * 2] ALIGN(32);
-static s16 buffer_R[MIXBUFSIZE * 2] ALIGN(32);
+#define RING_BUF_SIZE (MIXBUFSIZE << 3) // Buffer needs to be at least 1024 for stability
+#define RING_MASK (RING_BUF_SIZE - 1)
+
+static s16 buffer_L[RING_BUF_SIZE] ALIGN(32);
+static s16 buffer_R[RING_BUF_SIZE] ALIGN(32);
+static int buff_write_cursor = 0;
 
 // Sound status flags
 static int APU_paused;
-static int chan;
 
 // Resets the APU emulation to avoid garbage sounds
 void resetApu()
@@ -56,33 +59,48 @@ __inline static int16_t clampSample16(int32_t inSample)
     return (int16_t)(outSample >> 16);
 }
 
-// blip_buf mixes everything, we no longer need to emulate the APU mixer or convert samples.
-void __fastcall soundMain(int active_chan)
+
+// Main audio loop.
+// By using a Ring Buffer, we prevent sound saturation and audio 
+// corruption caused by a clock drift.
+void __fastcall soundMain()
 {
     if (APU_paused) return;
 
-	s16 *pcmL = &buffer_L[active_chan * MIXBUFSIZE];
-    s16 *pcmR = &buffer_R[active_chan * MIXBUFSIZE];
-    
-    // Render NES Sound frame. blip_buf already delivers centered PCM16 samples, prefect for the DS
-    nesApuProcessBlipBufferChannels(MIXBUFSIZE, pcmL);
+    s16 temp_buf[MIXBUFSIZE]; // Intermediate buffer to hold processed samples
+
+    // Render a NES Sound frame. Generates the deltas for every APU channel.
+    nesApuProcessBlipBufferChannels(MIXBUFSIZE);
+
+	// blip_buf already converts deltas to centered PCM16 samples, prefect for the DS
+	// Reading ensures blip_buf internal avail stays in sync with the timers.
+    int read = blip_read_samples(master_blip, temp_buf, MIXBUFSIZE, 0);
+
+	// Fill with silence if blip_buf underflows to avoid playing old buffer data
+    if (read < MIXBUFSIZE)
+	{
+        memset(temp_buf + read, 0, (MIXBUFSIZE - read) * sizeof(s16));
+    }
 
 	// Add Sound Expansion samples if enabled
     if (has_fds && !apu_cfg.fds)
-    {
+	{
         for (int i = 0; i < MIXBUFSIZE; i++)
-        {
-            // Get FDS samples from the render
+		{
+			// Get FDS samples from the render
             int32_t fds_sample = FDSSoundRender();
-
-            // Apply gain consistent with the nes APU
-            int32_t mixed = (int32_t)pcmL[i] + (fds_sample << 1);
-            pcmL[i] = clampSample16(mixed);
+			// Apply gain consistent with the nes APU
+            temp_buf[i] = clampSample16((int32_t)temp_buf[i] + (fds_sample << 1));
         }
     }
 
-    // Copy the final L buffer into the R Buffer
-    memcpy(pcmR, pcmL, MIXBUFSIZE * sizeof(s16));
+	// The Sound hardware is now independently looping through buffer_L/R
+    for (int i = 0; i < MIXBUFSIZE; i++)
+	{
+        buffer_L[buff_write_cursor] = temp_buf[i];
+        buffer_R[buff_write_cursor] = temp_buf[i]; // Stereo copy TODO: Add pseudo-stereo effect back
+        buff_write_cursor = (buff_write_cursor + 1) & RING_MASK;
+    }
 
     readApu();
     APU4015Reg();
@@ -92,6 +110,11 @@ static void clearSoundBuffers(void)
 {
     memset(buffer_L, 0, sizeof(buffer_L));
     memset(buffer_R, 0, sizeof(buffer_R));
+	buff_write_cursor = 0;
+	if (master_blip)
+	{
+        blip_clear(master_blip);
+    }
 }
 
 void initsound()
@@ -99,16 +122,14 @@ void initsound()
 	powerOn(BIT(0));
 	REG_SOUNDCNT = SOUND_ENABLE | SOUND_VOL(127);
 
-    u16 timerVal = TIMER_NFREQ; // 32768Hz
+	SCHANNEL_SOURCE(RIGHT_CHANNEL) = (u32)buffer_R;
+	SCHANNEL_SOURCE(LEFT_CHANNEL)  = (u32)buffer_L;
 
-	SCHANNEL_SOURCE(RIGHT_CHANNEL) = (u32)&buffer_R[0];
-	SCHANNEL_SOURCE(LEFT_CHANNEL) = (u32)&buffer_L[0];
+	SCHANNEL_TIMER(RIGHT_CHANNEL) = TIMER_NFREQ; // 32768Hz
+	SCHANNEL_TIMER(LEFT_CHANNEL)  = TIMER_NFREQ;
 
-	SCHANNEL_TIMER(RIGHT_CHANNEL) = timerVal;
-	SCHANNEL_TIMER(LEFT_CHANNEL) = timerVal;
-
-	SCHANNEL_LENGTH(RIGHT_CHANNEL) = MIXBUFSIZE;
-	SCHANNEL_LENGTH(LEFT_CHANNEL) = MIXBUFSIZE;
+	SCHANNEL_LENGTH(RIGHT_CHANNEL) = RING_BUF_SIZE >> 1;
+	SCHANNEL_LENGTH(LEFT_CHANNEL)  = RING_BUF_SIZE >> 1;
 
 	SCHANNEL_REPEAT_POINT(RIGHT_CHANNEL) = 0;
 	SCHANNEL_REPEAT_POINT(LEFT_CHANNEL) = 0;
@@ -124,7 +145,7 @@ void initsound()
 		L_PAN |
 		SOUND_FORMAT_16BIT;
 
-	TIMER_DATA(0) = timerVal << 1;
+	TIMER_DATA(0) = TIMER_NFREQ << 1;
 	TIMER_CR(0) = TIMER_ENABLE;
 
 	TIMER_DATA(1) = (u16)-MIXBUFSIZE;
@@ -142,12 +163,9 @@ void stopsound()
 	clearSoundBuffers();
 }
 
-void restartsound(int ch)
+void restartsound()
 {
-	soundMain(0);
-    soundMain(1);
-
-	chan = 0;
+	soundMain();
 	
 	SCHANNEL_CR(RIGHT_CHANNEL) |= SCHANNEL_ENABLE;
     SCHANNEL_CR(LEFT_CHANNEL)  |= SCHANNEL_ENABLE;
@@ -160,17 +178,17 @@ void restartsound(int ch)
 void lidinterrupt(void)
 {
 	stopsound();
-	restartsound(1);
+	clearSoundBuffers();
+	restartsound();
 }
 
 void soundinterrupt(void)
 {
-    soundMain(chan); 
-    chan ^= 1; 
+	soundMain(); 
     REG_IF = IRQ_TIMER1;
 }
 
-void fifointerrupt(u32 msg, void *none)			//This should be registered to a fifo channel.
+void fifointerrupt(u32 msg, void *none) // This should be registered to a fifo channel.
 {
 	u32 cmd = msg & 0xFF;
     u32 data = msg >> 8; // APU Status flags Cfg bits
@@ -235,7 +253,7 @@ void nesmain()
 	initsound();
 	restartsound(0);
 
-	fifoSetValue32Handler(FIFO_USER_08, fifointerrupt, 0);		//use the last IPC channel to comm..
+	fifoSetValue32Handler(FIFO_USER_08, fifointerrupt, 0); // Use the last IPC channel to comm..
 	irqSet(IRQ_LID, lidinterrupt);
 	irqSet(IRQ_TIMER1, soundinterrupt);
 	swiWaitForVBlank();
