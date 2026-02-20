@@ -769,15 +769,8 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
     (apu_cfg.dmcraw)
         ? snd_stopChannel(PSG_APU_DMC_CH)
         : nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH, PSG_DMC_PAN_CH);
-}
 
-/// @brief Update the DS hardware global renders. Only the HW noise is rendered 
-///        here as the global render for now.
-/// @param nes_apu_clock NES APU clock frequency.
-__inline static void nesApuNoiseHwRender(uint32_t nes_apu_clock)
-{
-	// Check if the APU flags have any of the channels muted
-    (apu_cfg.noi)
+    (apu_cfg.noiraw)
         ? snd_stopChannel(PSG_APU_NOISE_CH)
         : nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH, nes_apu_clock);
 }
@@ -837,7 +830,7 @@ __inline static void nesApuSoundPulseRenderBlipSlice(NESAPU_SQUARE *ch, blip_t* 
     {
         if (ch->last_amp != 0)
         {
-            blip_add_delta(blip_buffer, time_offset, -(ch->last_amp) << DELTA_VOL);
+            blip_add_delta_fast(blip_buffer, time_offset, -(ch->last_amp) << DELTA_VOL);
             ch->last_amp = 0;
         }
         // IMPORTANT: Sum clocks to the pt remainder instead of resetting to 0.
@@ -869,7 +862,7 @@ __inline static void nesApuSoundPulseRenderBlipSlice(NESAPU_SQUARE *ch, blip_t* 
         int amp = (ch->st >= ch->duty) ? current_vol : 0;
         if (amp != ch->last_amp)
         {
-            blip_add_delta(blip_buffer, time_at_delta + time_offset, (amp - ch->last_amp) << DELTA_VOL);
+            blip_add_delta_fast(blip_buffer, time_at_delta + time_offset, (amp - ch->last_amp) << DELTA_VOL);
             ch->last_amp = amp;
         }
 
@@ -905,7 +898,7 @@ __inline static void nesApuSoundTriangleRenderBlipSlice(NESAPU_TRIANGLE *ch, bli
     {
         if (ch->last_amp != 0)
         {
-            blip_add_delta(blip_buffer, time_offset, -(ch->last_amp << DELTA_VOL));
+            blip_add_delta_fast(blip_buffer, time_offset, -(ch->last_amp << DELTA_VOL));
             ch->last_amp = 0;
         }
         return;
@@ -1134,7 +1127,7 @@ __inline static void nesApuSoundDmcRenderBlipSlice(NESAPU_DPCM *ch, blip_t* blip
 }
 
 // Main SW and HW sound render function
-void nesApuProcessBlipBufferChannels(int sample_count)
+__fastcall void nesApuProcessBlipBufferChannels(int sample_count)
 {
     uint32_t nes_apu_clock = apu_cfg.region_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     int total_clocks = blip_clocks_needed(master_blip, sample_count);
@@ -1162,8 +1155,7 @@ void nesApuProcessBlipBufferChannels(int sample_count)
         nesApuSoundPulseRenderBlipSlice(&apu.square[0], master_blip, clocks_to_run, time_done, apu_cfg.pu1);
         nesApuSoundPulseRenderBlipSlice(&apu.square[1], master_blip, clocks_to_run, time_done, apu_cfg.pu2);
         nesApuSoundTriangleRenderBlipSlice(&apu.triangle, master_blip, clocks_to_run, time_done, apu_cfg.tri);
-        // TODO: Fix the noise channel in blip_buf mode, help wanted.
-        // nesApuSoundNoiseRenderBlipSlice(&apu.noise, master_blip, clocks_to_run, time_done, apu_cfg.noi);
+        nesApuSoundNoiseRenderBlipSlice(&apu.noise, master_blip, clocks_to_run, time_done, apu_cfg.noi);
         time_done += clocks_to_run;
         
         // CLOCK THE FRAME SEQUENCER FOR EVERY APU CHANNEL
@@ -1225,7 +1217,6 @@ void nesApuProcessBlipBufferChannels(int sample_count)
             {
                 nesApuSoundHwRender(nes_apu_clock);
             }
-            nesApuNoiseHwRender(nes_apu_clock);
             VRC6SoundHwUpdate();
         }
     }
