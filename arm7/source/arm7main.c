@@ -67,7 +67,7 @@ void __fastcall soundMain()
 {
     if (APU_paused) return;
 
-    s16 temp_buf[MIXBUFSIZE]; // Intermediate buffer to hold processed samples
+    s16 temp_buf[MIXBUFSIZE] ALIGN(32); // Intermediate buffer to hold processed samples
 
     // Render a NES Sound frame. Generates the deltas for every APU channel.
     nesApuProcessBlipBufferChannels(MIXBUFSIZE);
