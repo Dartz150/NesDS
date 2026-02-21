@@ -134,7 +134,6 @@ typedef struct
 	Uint32 adr;				/* current address */
     Uint32 cps;				/* cycles per sample for RAW PCM */
     Uint32 pt_raw;             // phase accum for RAW PCM
-    Uint32 lp;
 	Int32 dacout;
 	Int32 dacout0;
 	Uint8 start_length;
@@ -1573,9 +1572,6 @@ static void __fastcall apuSoundReset(void)
 	// Set APU regional flags and cps
 	uint32_t nes_apu_clock = apu_cfg.region_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     uint32_t dmc_cps = getFixedPointStep(nes_apu_clock, DS_SOUND_FREQUENCY, CPS_SHIFT);
-    uint32_t line_period = apu_cfg.region_pal
-        ? (3410u << (CPS_SHIFT - 5)) / 1
-        : (341u << CPS_SHIFT) / 3;
 
 	apuSyncConfigCache(apu_cfg.region_pal);
 
@@ -1588,7 +1584,6 @@ static void __fastcall apuSoundReset(void)
     apu.noise.rng = 1; // Noise channel must be inited with 1
     apu.dpcm.first = 1;
     apu.dpcm.cps = dmc_cps; // DMC cycles per sample
-    apu.dpcm.lp = line_period; // RAW PCM line_period
     apu.regs[0x17] = 0x00; // Spec: Init $4017 reg en 4 step mode (0x00)
 
 	for (int i = 0; i <= 0x17; i++)
