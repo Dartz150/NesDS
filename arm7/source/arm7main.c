@@ -75,6 +75,7 @@ void __fastcall soundMain()
 	// blip_buf already converts deltas to centered PCM16 samples, prefect for the DS
 	// Reading ensures blip_buf internal avail stays in sync with the timers.
     int read = blip_read_samples(master_blip, temp_buf, MIXBUFSIZE, 0);
+	ptr_mixed = 0; // Always reset read pointer
 
 	// Fill with silence if blip_buf underflows to avoid playing old buffer data
     if (read < MIXBUFSIZE)
@@ -128,8 +129,8 @@ void initsound()
 	SCHANNEL_TIMER(RIGHT_CHANNEL) = TIMER_NFREQ; // 32768Hz
 	SCHANNEL_TIMER(LEFT_CHANNEL)  = TIMER_NFREQ;
 
-	SCHANNEL_LENGTH(RIGHT_CHANNEL) = RING_BUF_SIZE >> 1;
-	SCHANNEL_LENGTH(LEFT_CHANNEL)  = RING_BUF_SIZE >> 1;
+	SCHANNEL_LENGTH(RIGHT_CHANNEL) = sizeof(buffer_R) >> 2;
+	SCHANNEL_LENGTH(LEFT_CHANNEL)  = sizeof(buffer_L) >> 2;
 
 	SCHANNEL_REPEAT_POINT(RIGHT_CHANNEL) = 0;
 	SCHANNEL_REPEAT_POINT(LEFT_CHANNEL) = 0;
