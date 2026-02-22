@@ -110,6 +110,7 @@ static void clearSoundBuffers(void)
 {
     memset(buffer_L, 0, sizeof(buffer_L));
     memset(buffer_R, 0, sizeof(buffer_R));
+	memset(temp_buf, 0, sizeof(temp_buf));
 	buff_write_cursor = 0;
 	if (master_blip)
 	{
@@ -178,8 +179,8 @@ void restartsound()
 void lidinterrupt(void)
 {
 	stopsound();
-	clearSoundBuffers();
 	restartsound();
+	clearSoundBuffers();
 }
 
 void soundinterrupt(void)
