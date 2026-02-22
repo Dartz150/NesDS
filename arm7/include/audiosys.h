@@ -40,8 +40,6 @@ typedef struct
     bool pu1raw;
     bool pu2raw;
 	bool triraw;
-    bool noiraw;
-	bool dmcraw;
 	bool pu1;
     bool pu2;
     bool noi;
