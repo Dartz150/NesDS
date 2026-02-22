@@ -1,7 +1,6 @@
 #include <string.h>
 #include "nestypes.h"
 #include "audiosys.h"
-#include "handler.h"
 #include "s_fds.h"
 
 // (:::) FDS AUDIO ENGINE (:::) //
@@ -258,16 +257,14 @@ void __fastcall FDSSoundWrite(Uint address, Uint value)
     }
 }
 
-static void __fastcall FDSSoundReseter(FDSSOUND *ch) 
+static void __fastcall FDSSoundReseter(FDSSOUND *ch, Uint32 nes_apu_clock, Uint32 ds_sound_freq) 
 {
     XMEMSET(&fdssound, 0, sizeof(FDSSOUND));
-    uint32_t sample_rate = DS_SOUND_FREQUENCY;
-    // There's no FDS PAL titles, always set it to NTSC
-    fdssound.phasecps = getFixedPointStep(NES_CPU_NTSC, sample_rate, PGCPS_BITS);
+    fdssound.phasecps = getFixedPointStep(nes_apu_clock, ds_sound_freq, PGCPS_BITS);
 	// Global Envelope Speed Correction
     // Dividing cpu_clock by 8 provides the correct tick density for the DS,
     // matching the real FDS hardware slow envelope decays.
-    fdssound.envcps = getFixedPointStep(NES_CPU_NTSC >> 3, sample_rate, EGCPS_BITS);
+    fdssound.envcps = getFixedPointStep(nes_apu_clock >> 3, ds_sound_freq, EGCPS_BITS);
     fdssound.envspd = 0xe8 << EGCPS_BITS;
     fdssound.envdisable = 1;
 
@@ -277,18 +274,7 @@ static void __fastcall FDSSoundReseter(FDSSOUND *ch)
     }
 }
 
-static void FDSSoundReset(void)
+void fdsSoundInit(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
-    FDSSoundReseter(&fdssound);
-}
-
-static NES_RESET_HANDLER s_fds_reset_handler[] =
-{
-	{ NES_RESET_SYS_NOMAL, FDSSoundReset, },
-	{ 0,                   0, },
-};
-
-extern void FDSSoundInstall(void)
-{
-	NESResetHandlerInstall(s_fds_reset_handler);
+	FDSSoundReseter(&fdssound, nes_apu_clock, ds_sound_freq);
 }

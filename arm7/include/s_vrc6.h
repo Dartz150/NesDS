@@ -5,9 +5,8 @@ extern "C" {
 #endif
 
 // VRC6 Sound handlers
-void VRC6SoundInstall(void);
-void VRC6SoundReset(void);
-void VRC6SoundHwUpdate();
+void vrc6SoundInit();
+void VRC6SoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq);
 void VRC6SoundHwStop();
 
 // VRC6 Write regs

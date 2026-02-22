@@ -1,7 +1,6 @@
 #include <string.h>
 #include "nestypes.h"
 #include "audiosys.h"
-#include "handler.h"
 #include "c_defs.h"
 #include "s_vrc6.h"
 #include "soundChannel.h"
@@ -107,7 +106,7 @@ static void generateVrc6SawHQ()
     }
 }
 
-static void vrc6SoundSquareUpdateHw(VRC6_SQUARE *ch, int ds_chan, int pan)
+static void vrc6SoundSquareUpdateHw(VRC6_SQUARE *ch, int ds_chan, int pan, Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
     // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
@@ -158,10 +157,10 @@ static void vrc6SoundSquareUpdateHw(VRC6_SQUARE *ch, int ds_chan, int pan)
     if (use_pcm8)
     {
         // PCM8 with 16 a bit table, shift 1 so 1 byte = 1 WL tick
-        ds_timer = nesToDsTimer(vrc_wl, NES_CPU_NTSC, 1, 1);
+        ds_timer = nesToDsTimer(vrc_wl, nes_apu_clock, 1, 1);
 
         // Apply the oversampling factor if better wave qualities are used.
-        ds_timer = (DS_SOUND_FREQUENCY << 1) - (((DS_SOUND_FREQUENCY << 1) - ds_timer) / VRC6_OVERSAMPLE);
+        ds_timer = (ds_sound_freq << 1) - (((ds_sound_freq << 1) - ds_timer) / VRC6_OVERSAMPLE);
 
         if (!snd_isChannelPlaying(ds_chan) || (REG_SOUNDxCNT(ds_chan) & SOUNDCNT_FORMAT_PSG))
         {
@@ -188,8 +187,7 @@ static void vrc6SoundSquareUpdateHw(VRC6_SQUARE *ch, int ds_chan, int pan)
     else
     {
         // The DS PSG hardware already does the /16 div internally, shift 2
-        // VRC6 titles are always NTSC
-        ds_timer = nesToDsTimer(vrc_wl, NES_CPU_NTSC, 2, 1);
+        ds_timer = nesToDsTimer(vrc_wl, nes_apu_clock, 2, 1);
 
         if (!snd_isChannelPlaying(ds_chan) || !(REG_SOUNDxCNT(ds_chan) & SOUNDCNT_FORMAT_PSG))
         {
@@ -213,7 +211,7 @@ static void vrc6SoundSquareUpdateHw(VRC6_SQUARE *ch, int ds_chan, int pan)
 }
 
 // We also use a PCM8 channel as a wave oscillator for the Saw channel
-static void vrc6SoundSawUpdateHw(VRC6_SAW *ch, int ds_chan, int pan)
+static void vrc6SoundSawUpdateHw(VRC6_SAW *ch, int ds_chan, int pan, Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
     // When the channel is disabled by clearing the E bit (0x80), output is forced to 0, 
 	// and the duty cycle is immediately reset and halted.
@@ -227,11 +225,10 @@ static void vrc6SoundSawUpdateHw(VRC6_SAW *ch, int ds_chan, int pan)
     }
 
     // 1 DS sample = 1 VRC6 base cycle (WL+1).
-    // VRC6 titles are always NTSC
-    u16 ds_timer = nesToDsTimer(vrc_wl, NES_CPU_NTSC, 1, 1);
+    u16 ds_timer = nesToDsTimer(vrc_wl, nes_apu_clock, 1, 1);
 
     // Apply the oversampling factor if better wave qualities are used.
-    ds_timer = (DS_SOUND_FREQUENCY << 1) - (((DS_SOUND_FREQUENCY << 1) - ds_timer) / VRC6_OVERSAMPLE);
+    ds_timer = (ds_sound_freq << 1) - (((ds_sound_freq << 1) - ds_timer) / VRC6_OVERSAMPLE);
 
     // The Saw is an accumulator that increments only on even phases,
     // we simulate with a pre-accumulated 28 byte table.
@@ -260,7 +257,7 @@ static void vrc6SoundSawUpdateHw(VRC6_SAW *ch, int ds_chan, int pan)
     }
 }
 
-void VRC6SoundHwUpdate()
+void VRC6SoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
     if (!has_vrc6) return;
 
@@ -279,22 +276,15 @@ void VRC6SoundHwUpdate()
 
     (apu_cfg.vrc_p1)
         ? snd_stopChannel(PSG_VRC_SQUARE_1_CH)
-        : vrc6SoundSquareUpdateHw(&vrc6s.square[0], PSG_VRC_SQUARE_1_CH, v_pu1_pan);
+        : vrc6SoundSquareUpdateHw(&vrc6s.square[0], PSG_VRC_SQUARE_1_CH, v_pu1_pan, nes_apu_clock, ds_sound_freq);
 
     (apu_cfg.vrc_p2)
         ? snd_stopChannel(PSG_VRC_SQUARE_2_CH)
-        : vrc6SoundSquareUpdateHw(&vrc6s.square[1], PSG_VRC_SQUARE_2_CH, v_pu2_pan);
+        : vrc6SoundSquareUpdateHw(&vrc6s.square[1], PSG_VRC_SQUARE_2_CH, v_pu2_pan, nes_apu_clock, ds_sound_freq);
 
     (apu_cfg.vrc_saw)
         ? snd_stopChannel(PSG_VRC_SAW_CH)
-        : vrc6SoundSawUpdateHw(&vrc6s.saw, PSG_VRC_SAW_CH, 64);
-}
-
-void VRC6SoundHwStop()
-{
-    snd_stopChannel(PSG_VRC_SQUARE_1_CH);
-    snd_stopChannel(PSG_VRC_SQUARE_2_CH);
-    snd_stopChannel(PSG_VRC_SAW_CH);
+        : vrc6SoundSawUpdateHw(&vrc6s.saw, PSG_VRC_SAW_CH, 64, nes_apu_clock, ds_sound_freq);
 }
 
 static void VRC6SoundWriteSquare(VRC6_SQUARE *ch, Uint address, Uint value)
@@ -352,21 +342,17 @@ void VRC6SoundWriteB000(Uint address, Uint value)
     }
 }
 
-static NES_RESET_HANDLER s_vrc6_reset_handler[] =
+void VRC6SoundHwStop()
 {
-	{ NES_RESET_SYS_NOMAL, VRC6SoundReset, }, 
-	{ 0,                   0, }, 
-};
+    snd_stopChannel(PSG_VRC_SQUARE_1_CH);
+    snd_stopChannel(PSG_VRC_SQUARE_2_CH);
+    snd_stopChannel(PSG_VRC_SAW_CH);
+}
 
-void __fastcall VRC6SoundReset(void)
+void __fastcall vrc6SoundInit()
 {
 	XMEMSET(&vrc6s, 0, sizeof(VRC6SOUND));
     vrc6SoundSetPulseLineRegs();
     generateVrc6SquareHQ();
     generateVrc6SawHQ();
-}
-
-void VRC6SoundInstall(void)
-{
-	NESResetHandlerInstall(s_vrc6_reset_handler);
 }

@@ -1,3 +1,4 @@
+#pragma once
 /** \file
 Sample buffer that resamples from input clock rate to output sample rate */
 

@@ -1,14 +1,13 @@
-#ifndef S_FDS_H__
-#define S_FDS_H__
+#pragma once
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern void FDSSoundInstall(void);
+void fdsSoundInit(Uint32 nes_apu_clock, Uint32 ds_sound_freq);
+void FDSSoundWrite(Uint address, Uint value);
 Int32 FDSSoundRender(void);
-void __fastcall FDSSoundWrite(Uint address, Uint value);
 
 #ifdef __cplusplus
 }
 #endif
-#endif /* S_FDS_H__ */

@@ -12,40 +12,8 @@ ApuConfig apu_cfg;
 bool has_vrc6;
 bool has_fds;
 
-static NES_AUDIO_HANDLER *nah = 0;
 // ARM7 side APU status flags
 u32 apu_internal_state;
-
-static void NESAudioHandlerInstallOne(NES_AUDIO_HANDLER *ph)
-{
-	/* Add to tail of list*/
-	ph->next = 0;
-	if (nah)
-	{
-		NES_AUDIO_HANDLER *p = nah;
-		while (p->next) p = p->next;
-		p->next = ph;
-	}
-	else
-	{
-		nah = ph;
-	}
-}
-
-void NESAudioHandlerInstall(NES_AUDIO_HANDLER *ph)
-{
-	for (;(ph->fMode&2)?(!!ph->Proc2):(!!ph->Proc);ph++) NESAudioHandlerInstallOne(ph);
-}
-
-void getPulseMode()
-{
-    return apu_cfg.hw_render;
-}
-
-void getApuCurrentRegion()
-{
-	return apu_cfg.region_pal;
-}
 
 /**
  * Calculates phase step in fixed point for the oscilators.

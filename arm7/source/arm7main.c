@@ -3,7 +3,6 @@
 #include <string.h>
 #include "c_defs.h"
 #include "audiosys.h"
-#include "handler.h"
 #include "s_apu.h"
 #include "s_defs.h"
 #include "s_vrc6.h"
@@ -32,21 +31,31 @@
 static s16 buffer_L[RING_BUF_SIZE] ALIGN(32);
 static s16 buffer_R[RING_BUF_SIZE] ALIGN(32);
 static s16 temp_buf[MIXBUFSIZE] ALIGN(32); // Intermediate buffer to hold processed samples
-static int buff_write_cursor = 0;
+static int buff_write_cursor;
 
 // Sound status flags
+static uint32_t nes_apu_clock;
+static uint32_t ds_sound_freq;
 static int APU_paused;
 
-// Resets the APU emulation to avoid garbage sounds
-void resetApu()
+void setDsSoundFreq()
 {
-	// Only detect expansions once per reset
-    const int mapper = IPC_MAPPER;
-    has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
-    has_fds  = (mapper == 20 || mapper == 256);
-	NESReset();
-	IPC_APUW = 0;
-	IPC_APUR = 0;
+	ds_sound_freq = DS_SOUND_FREQUENCY;
+}
+
+void setApuRegion()
+{
+	// VRC6/FDS titles are always NTSC
+	if (has_vrc6 || has_fds)
+	{
+		nes_apu_clock = NES_APU_NTSC;
+	}
+	else
+	{
+		nes_apu_clock = apu_cfg.region_pal 
+		? NES_APU_PAL
+		: NES_APU_NTSC;
+	}
 }
 
 // https://github.com/Gericom/GBARunner3/blob/develop/code/core/arm7/source/Sound/GbaSound7.c#L50
@@ -60,6 +69,16 @@ __inline static int16_t clampSample16(int32_t inSample)
     return (int16_t)(outSample >> 16);
 }
 
+__fastcall void readApu()
+{
+	int max_cmds = 32; // Security limit
+    while(fifoCheckValue32(FIFO_USER_07) && max_cmds--) 
+	{
+        u32 msg = fifoGetValue32(FIFO_USER_07);
+        apuSoundWrite(msg >> 8, msg & 0xFF);
+    }
+    IPC_APUR = IPC_APUW;
+}
 
 // Main audio loop.
 // By using a Ring Buffer, we prevent sound saturation and audio 
@@ -68,8 +87,8 @@ void __fastcall soundMain()
 {
     if (APU_paused) return;
 
-    // Render a NES Sound frame. Generates the deltas for every APU channel.
-    nesApuProcessBlipBufferChannels(MIXBUFSIZE);
+    // Render a NES Sound frame. Generates the deltas/samples for every APU channel.
+    nesApuProcessChannels(MIXBUFSIZE, nes_apu_clock, ds_sound_freq);
 
 	// blip_buf already converts deltas to centered PCM16 samples, prefect for the DS
 	// Reading ensures blip_buf internal avail stays in sync with the timers.
@@ -183,6 +202,30 @@ void lidinterrupt(void)
 	clearSoundBuffers();
 }
 
+// Reinits the whole APU + Sound exansions
+void resetApu()
+{
+	// Only detect expansions once per reset
+    const int mapper = IPC_MAPPER;
+    has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
+    has_fds  = (mapper == 20 || mapper == 256);
+
+	clearSoundBuffers();
+	setApuRegion();
+	apuSoundInit(nes_apu_clock, ds_sound_freq);
+	if (has_vrc6)
+	{
+		vrc6SoundInit();
+	}
+
+	if (has_fds)
+	{
+		fdsSoundInit(nes_apu_clock, ds_sound_freq);
+	}
+	IPC_APUW = 0;
+	IPC_APUR = 0;
+}
+
 void soundinterrupt(void)
 {
 	soundMain(); 
@@ -224,35 +267,24 @@ void fifointerrupt(u32 msg, void *none) // This should be registered to a fifo c
 	}
 }
 
-void readApu()
-{
-	int max_cmds = 32; // Security limit
-    while(fifoCheckValue32(FIFO_USER_07) && max_cmds--) 
-	{
-        u32 msg = fifoGetValue32(FIFO_USER_07);
-        apuSoundWrite(msg >> 8, msg & 0xFF);
-    }
-    IPC_APUR = IPC_APUW;
-}
-
 void interrupthandler() 
 {
-	u32 flags=REG_IF&REG_IE;
-	if(flags&IRQ_TIMER1)
+	u32 flags = REG_IF&REG_IE;
+
+	if (flags&IRQ_TIMER1)
+	{
 		soundinterrupt();
+	}		
 }
 
 void nesmain() 
 {
-	clearSoundBuffers();
-	apuSoundInstall();
-	VRC6SoundInstall();
-	FDSSoundInstall();
+	setDsSoundFreq();
 	
 	resetApu();
 
 	initsound();
-	restartsound(0);
+	restartsound();
 
 	fifoSetValue32Handler(FIFO_USER_08, fifointerrupt, 0); // Use the last IPC channel to comm..
 	irqSet(IRQ_LID, lidinterrupt);

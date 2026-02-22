@@ -1,6 +1,4 @@
-#ifndef MIXER_H__
-#define MIXER_H__
-
+#pragma once
 #include <nds/system.h>
 #include "nestypes.h"
 
@@ -34,23 +32,10 @@ extern "C" {
 // NES DEFINITIONS
 #define NES_SCANLINES                  262
 // Total Samples the DS generates exactly in one frame
-#define SAMPLES_PER_DS_FRAME           (DS_SOUND_FREQUENCY / (DS_BUS_CLOCK / NDS_CYCLES_PER_FRAME))
+#define SAMPLES_PER_DS_FRAME           (((u64)DS_SOUND_FREQUENCY * NDS_CYCLES_PER_FRAME + (DS_BUS_CLOCK >> 1)) / DS_BUS_CLOCK)
 
-#define MIXBUFSIZE        (1 << 7)
-
-// Pulse Channels 1 and 2 Hardware renderers
-// PSG channel writes change the sound INSTANTLY. 
-// Always call this after the software sound renderers to avoid sound latency.
-void nesApuSoundHwStop();
-
-// Bip Buffer processes all the APU channels now
-void nesApuProcessBlipBufferChannels(int sample_count);
-void apuSoundInstall();
-void FDSSoundInstall();
-void readApu();
+#define MIXBUFSIZE                     (1 << 7)
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* MIXER_H__ */

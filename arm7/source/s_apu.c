@@ -2,7 +2,6 @@
 #include <string.h>
 #include "nestypes.h"
 #include "audiosys.h"
-#include "handler.h"
 #include "s_apu.h"
 #include "c_defs.h"
 #include "s_vrc6.h"
@@ -23,7 +22,6 @@
 #define PSG_DMC_PAN_CH          64
 
 // DMC RING BUFFER DEFINES
-#define DMC_VOL_FACTOR  1
 #define DMC_BUF_SIZE    (512)
 #define DMC_MASK        (DMC_BUF_SIZE - 1)
 
@@ -94,6 +92,7 @@ typedef struct
 	Uint8 duty;				/* duty rate */
 	Uint8 key;
 	Uint8 mute;
+    Uint8 pan;
 	Uint32 last_amp;
 } NESAPU_SQUARE;
 
@@ -107,6 +106,7 @@ typedef struct
 	Uint8 st;				/* wave step */
 	Uint8 key;
 	Uint8 mute;
+    Uint8 pan;
 	Uint32 last_amp;
 } NESAPU_TRIANGLE;
 
@@ -119,9 +119,12 @@ typedef struct
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
 	Uint32 rng;
+    Uint32 write_cursor;    /* Ring Buffer Write Cursor*/
+    Uint32 accum;           /* Buffer Phase Accumulator */
 	Uint8 rngshort;
 	Uint8 key;
 	Uint8 mute;
+    Uint8 pan;
 	Uint32 last_amp;
 } NESAPU_NOISE;
 
@@ -136,6 +139,7 @@ typedef struct
     Uint32 cps;				/* cycles per sample for RAW PCM */
     Uint32 rpcm_idx;        /* RAW PCM IPC scanline index*/
     Uint32 rpcm_pos;        /* RAW PCM scanline position*/
+    Uint32 write_cursor;    /* Ring Buffer Write Cursor*/
     Uint32 accum;           /* Buffer Phase Accumulator */
 	Int32 dacout;
 	Int32 dacout0;
@@ -150,7 +154,8 @@ typedef struct
 	Uint8 dacbase;
 	Uint8 key;
 	Uint8 mute;
-	Uint32 last_amp;
+    Uint8 pan;
+    bool init;
 } NESAPU_DPCM;
 
 typedef struct 
@@ -161,28 +166,27 @@ typedef struct
 	NESAPU_DPCM dpcm;
     Uint32 fc;    			/* Global Frame Counter */
     Uint32 fp;    			/* Global Frame Position */
+    Uint8 irq;              /* APU IRQ flag*/
 	Uint8 regs[0x20];
 } APUSOUND __attribute__((aligned(32)));
 
 static APUSOUND apu;
-static int apuirq;
+
 static const Uint8  *square_duty_table;
 static const Uint32 *noise_time_period_table;
 static const Uint32 *dpcm_freq_table;
 static const Uint32 *frame_seq_4;
 static const Uint32 *frame_seq_5;
-int ptr_mixed;
+
+// Also used in arm7main.c
 blip_t* master_blip;
+int ptr_mixed;
 
 // DMC ring buffer
-static bool dmc_hw_initialized = false;
 static s8 dmc_ring_buffer[DMC_BUF_SIZE] __attribute__((aligned(4)));
-static int dmc_write_cursor;
 
 // Noise ring buffer
-static s8 sNoiseRingBuffer[NOISE_BUF_SIZE] __attribute__((aligned(4)));
-static u32 sNoiseWriteCursor = 0;
-static u32 sNoiseAccumulator = 0; // Accumulator for the phase counter
+static s8 noi_ring_buffer[NOISE_BUF_SIZE] __attribute__((aligned(4)));
 
 // Square Duty LUT
 static const Uint8 square_duty_table_normal[4] = 
@@ -470,7 +474,7 @@ static void nesApuSoundTriangleUpdateHw(NESAPU_TRIANGLE *ch, DS_PSG_Channel ds_c
  * provide a clean PCM8 signal for the DS hardware mixer.
  * Always call this in the main sound func.
  */
-static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
+static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock, Uint32 ds_sound_freq)
 {
     NESAPU_NOISE *ch = &apu.noise;
     u32 period = ch->wl; // Period in NES CPU cycles
@@ -485,18 +489,18 @@ static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
     s32 target_vol = (volume_nes << 2); // Scale to PCM8 range
 
     // Fixed-point conversion factors
-    u32 clocks_per_sample_fp = (apu_clock << 8) / DS_SOUND_FREQUENCY;
+    u32 clocks_per_sample_fp = (apu_clock << 8) / ds_sound_freq;
     u32 period_fp = period << 8;
     u32 inv_clocks_fp = (1 << 24) / clocks_per_sample_fp;
 
     // Cache LFSR and accum
     u32 lfsr = ch->rng;
-    u32 accum_phase = sNoiseAccumulator;
+    u32 accum_phase = ch->accum;
     u16 rng_mask = ch->rngshort ? 6 : 1;
 
     // Ring Buffer pointers
-    s8 *dst = &sNoiseRingBuffer[sNoiseWriteCursor];
-    s8 *buffer_end = &sNoiseRingBuffer[NOISE_BUF_SIZE];
+    s8 *dst = &noi_ring_buffer[ch->write_cursor];
+    s8 *buffer_end = &noi_ring_buffer[NOISE_BUF_SIZE];
 
     for (int i = 0; i < samples_to_generate; i++)
     {
@@ -536,13 +540,13 @@ static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
 
         // Finalize the average sample for this interval
         *dst++ = (s8)((sample_accum * (s32)inv_clocks_fp) >> 24);
-        if (dst >= buffer_end) dst = sNoiseRingBuffer;
+        if (dst >= buffer_end) dst = noi_ring_buffer;
     }
 
     // Return values to the struct
     ch->rng = lfsr;
-    sNoiseAccumulator = accum_phase;
-    sNoiseWriteCursor = dst - sNoiseRingBuffer;
+    ch->accum = accum_phase;
+    ch->write_cursor = dst - noi_ring_buffer;
 }
 
 /**
@@ -553,12 +557,12 @@ static void nesApuSoundNoiseUpdateHw(NESAPU_NOISE *ch, DS_PSG_Channel ds_chan, i
 {
     if (!snd_isChannelPlaying(ds_chan))
     { 
-        memset(sNoiseRingBuffer, 0, NOISE_BUF_SIZE);
-        sNoiseWriteCursor = 128; // Write ahead of the read pointer
-        sNoiseAccumulator = 0;
+        memset(noi_ring_buffer, 0, NOISE_BUF_SIZE);
+        ch->write_cursor = 128; // Write ahead of the read pointer
+        ch->accum = 0;
 
         snd_stopChannel(ds_chan);
-        REG_SOUNDxSAD(ds_chan) = (u32)sNoiseRingBuffer;
+        REG_SOUNDxSAD(ds_chan) = (u32)noi_ring_buffer;
         REG_SOUNDxLEN(ds_chan) = NOISE_BUF_SIZE >> 2;
         REG_SOUNDxPNT(ds_chan) = 0;
         REG_SOUNDxTMR(ds_chan) = TIMER_NFREQ; 
@@ -719,13 +723,13 @@ static void nesApuFillDmcBuffer(int samples_to_generate, u32 apu_clock)
 /// @brief Updates the DMC channel using a DS hardware channel.
 /// @param ch       Pointer to the NES DPCM state.
 /// @param ds_chan  DS Channel (0-15).
-static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int pan)
+static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int pan, int sample_count)
 {
     // Init ring buffer
-    if (!dmc_hw_initialized || !snd_isChannelPlaying(ds_chan))
+    if (!ch->init || !snd_isChannelPlaying(ds_chan))
     {
         memset(dmc_ring_buffer, 0, sizeof(dmc_ring_buffer));
-        dmc_write_cursor = MIXBUFSIZE << 1;
+        ch->write_cursor = sample_count << 1;
         ch->accum = 0;
 
         snd_stopChannel(ds_chan);
@@ -737,7 +741,7 @@ static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int 
         REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PCM8 | 
                                 SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(127);
 
-        dmc_hw_initialized = true;
+        ch->init = true;
     }
 }
 
@@ -747,26 +751,25 @@ static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int 
 __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
 {
     // Set channel pan if the stereo flag is enabled
-    u32 pu1_pan, pu2_pan;
     if (apu_cfg.stereo)
     {
-        pu1_pan = 96;
-        pu2_pan = 32;
+        apu.square[0].pan = 88;
+        apu.square[1].pan = 40;
     }
     else
     {
-        pu1_pan = 64;
-        pu2_pan = 64;
+        apu.square[0].pan = 64;
+        apu.square[1].pan = 64;
     }
 
 	// Check if the APU flags have any of the channels muted
     (apu_cfg.pu1raw)
         ? snd_stopChannel(PSG_APU_SQUARE_1_CH)
-        : nesApuSoundPulseUpdateHw(&apu.square[0], PSG_APU_SQUARE_1_CH, pu1_pan, nes_apu_clock);
+        : nesApuSoundPulseUpdateHw(&apu.square[0], PSG_APU_SQUARE_1_CH, apu.square[0].pan, nes_apu_clock);
 
     (apu_cfg.pu2raw)
         ? snd_stopChannel(PSG_APU_SQUARE_2_CH)
-        : nesApuSoundPulseUpdateHw(&apu.square[1], PSG_APU_SQUARE_2_CH, pu2_pan, nes_apu_clock);
+        : nesApuSoundPulseUpdateHw(&apu.square[1], PSG_APU_SQUARE_2_CH, apu.square[1].pan, nes_apu_clock);
 
     (apu_cfg.triraw)
         ? snd_stopChannel(PSG_APU_TRIANGLE_CH)
@@ -775,12 +778,11 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
 
 /// @brief Update the Noise/DMC channels PCM8 renders. Writes change the sound INSTANTLY.
 //         Always call this after the software sound renderers to avoid sound latency.
-/// @param nes_apu_clock NES APU clock frequency.
-__inline static void nesApuNoiseUpdate(uint32_t nes_apu_clock)
+__inline static void nesApuPcm8Update(int sample_count)
 {
     (apu_cfg.dmc)
         ? snd_stopChannel(PSG_APU_DMC_CH)
-        : nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH, PSG_DMC_PAN_CH);
+        : nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH, PSG_DMC_PAN_CH, sample_count);
     (apu_cfg.noi)
         ? snd_stopChannel(PSG_APU_NOISE_CH)
         : nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH);
@@ -952,9 +954,8 @@ __inline static void nesApuSoundTriangleRenderBlipSlice(NESAPU_TRIANGLE *ch, bli
 }
 
 // Main SW and HW sound render function
-__fastcall void nesApuProcessBlipBufferChannels(int sample_count)
+__fastcall void nesApuProcessChannels(int sample_count, Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
-    uint32_t nes_apu_clock = apu_cfg.region_pal ? NES_CPU_PAL : NES_CPU_NTSC;
     int total_clocks = blip_clocks_needed(master_blip, sample_count);
     if (total_clocks <= 0) return;
 
@@ -1027,7 +1028,7 @@ __fastcall void nesApuProcessBlipBufferChannels(int sample_count)
                 }
                 if (step == 3 && !(apu.regs[0x17] & APU_FRAME_IRQ_OFF))
                 {
-                    apuirq = 1; // Fire IRQ if disabled
+                    apu.irq = 1; // Fire IRQ if disabled
                 }
             }
             apu.fp++;
@@ -1041,13 +1042,13 @@ __fastcall void nesApuProcessBlipBufferChannels(int sample_count)
             {
                 nesApuSoundHwRender(nes_apu_clock);
             }
-            VRC6SoundHwUpdate();
-            nesApuNoiseUpdate(nes_apu_clock);
+            VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            nesApuPcm8Update(sample_count);
         }
     }
 
     // Init HW DMC/Noise ring buffers, we need to do this outside of the while loop
-    nesApuFillNoiseBuffer(sample_count, nes_apu_clock);
+    nesApuFillNoiseBuffer(sample_count, nes_apu_clock, ds_sound_freq);
     nesApuFillDmcBuffer(sample_count, nes_apu_clock);
 
     blip_end_frame(master_blip, total_clocks);
@@ -1282,7 +1283,7 @@ void apuSoundWrite(Uint address, Uint value)
                 // If bit 6 is set, clean the IRQ flag
                 if (value & APU_FRAME_IRQ_OFF)
                 {
-                    apuirq = 0;
+                    apu.irq = 0;
                 }
                 break;
 			}
@@ -1349,12 +1350,12 @@ void __fastcall APU4015Reg()
     key |= APU_STATUS_FRAME_IRQ | apu.dpcm.irq_report;
 
     // Only update IPC if something really changed or there are pending irqs
-    if (oldkey != key || apuirq) 
+    if (oldkey != key || apu.irq) 
     {
         IPC_REG4015 = key;
-        IPC_APUIRQ = apuirq;
+        IPC_APUIRQ = apu.irq;
         oldkey = key;
-        apuirq = 0;
+        apu.irq = 0;
     }
 }
 
@@ -1388,16 +1389,15 @@ static void apuSyncConfigCache(bool region_flag)
 }
 
 // We no longer need cps calculations now, since blip doesn't render per-sample
-static void __fastcall apuSoundReset(void)
+void __fastcall apuSoundInit(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
 	// Set APU regional flags and cps
-	uint32_t nes_apu_clock = apu_cfg.region_pal ? NES_CPU_PAL : NES_CPU_NTSC;
-    uint32_t dmc_cps = getFixedPointStep(nes_apu_clock, DS_SOUND_FREQUENCY, CPS_SHIFT);
+    uint32_t dmc_cps = getFixedPointStep(nes_apu_clock, ds_sound_freq, CPS_SHIFT);
 
 	apuSyncConfigCache(apu_cfg.region_pal);
 
 	// blip_buf is now in charge of the NES -> DS rates.
-	nesApuBlipInit(nes_apu_clock, DS_SOUND_FREQUENCY);
+	nesApuBlipInit(nes_apu_clock, ds_sound_freq);
     nesApuSoundHwStop();
 
 	// Clear and Configure every APU channel and regs
@@ -1414,14 +1414,4 @@ static void __fastcall apuSoundReset(void)
 
 	apuSoundWrite(0x4015, 0x0f);
 	apu.dpcm.first = 1;
-}
-
-static NES_RESET_HANDLER s_apu_reset_handler[] = {
-	{ NES_RESET_SYS_NOMAL, apuSoundReset, 0},
-	{ 0,                   0, 0}
-};
-
-void apuSoundInstall(void)
-{
-	NESResetHandlerInstall(s_apu_reset_handler);
 }
