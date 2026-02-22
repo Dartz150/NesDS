@@ -129,11 +129,14 @@ typedef struct
 {
 	Uint32 wl;				/* wave length */
 	Uint32 pt;				/* programmable timer */
+    Uint32 fp;				/* frame position */
 	Uint32 length;			/* bit length */
 	Uint32 mastervolume;
 	Uint32 adr;				/* current address */
     Uint32 cps;				/* cycles per sample for RAW PCM */
-    Uint32 pt_raw;             // phase accum for RAW PCM
+    Uint32 rpcm_idx;        /* RAW PCM IPC scanline index*/
+    Uint32 rpcm_pos;        /* RAW PCM scanline position*/
+    Uint32 accum;           /* Buffer Phase Accumulator */
 	Int32 dacout;
 	Int32 dacout0;
 	Uint8 start_length;
@@ -175,7 +178,6 @@ blip_t* master_blip;
 static bool dmc_hw_initialized = false;
 static s8 dmc_ring_buffer[DMC_BUF_SIZE] __attribute__((aligned(4)));
 static int dmc_write_cursor;
-static int dmc_cycles_accumulator;
 
 // Noise ring buffer
 static s8 sNoiseRingBuffer[NOISE_BUF_SIZE] __attribute__((aligned(4)));
@@ -589,13 +591,10 @@ __inline static void nesApuSoundDmcStart(NESAPU_DPCM *ch)
 	nesApuSoundDmcRead(ch);
 }
 
-// DS side NES Frame Counter Increments on each generated sample.
-int raw_pcm_idx = 0;
-
 // Called in the main loop, we need it to be reset each DS frame
 void apuVblankSync()
 {
-    raw_pcm_idx = 0;
+    apu.dpcm.rpcm_idx = 0;
 }
 
 /**
@@ -612,51 +611,47 @@ void apuVblankSync()
  * within the current frame. When a valid timestamped write is detected,
  * the DMC DAC output is updated at the correct point in the audio timeline.
  */
-inline static void nesApuReplayDmcPcmWrites(NESAPU_DPCM *ch)
+inline static void nesApuReplayDmcPcmWrites(NESAPU_DPCM *ch, int sample_in_buffer)
 {
-	// RAW PCM samples must be rendered frame-perfect, hence this "async" method
+    // RAW PCM samples must be rendered frame-perfect, hence this "async" method
 	// This emulates RAW PCM sample fetching in DS speeds.
+    unsigned char *raw_pcm_buffer = (unsigned char *)IPC_PCMDATA;
 
-	unsigned char *raw_pcm_buffer = (unsigned char *)IPC_PCMDATA;
-	// Sample Rate = Number of 32kHz samples that fit in 1/60 seconds.
-	int samp_rate = SAMPLES_PER_DS_FRAME;
-    
-	// If for any reason the audio requests more than what we calculate in one frame
+    // Sample Rate = Number of 32kHz samples that fit in 1/60 seconds.
+    ch->rpcm_pos = (sample_in_buffer * NES_SCANLINES) / SAMPLES_PER_DS_FRAME;
+
+    // If for any reason the audio requests more than what we calculate in one frame
     // (samp_rate), we limit the index to avoid reading garbage
-    int current_idx = raw_pcm_idx;
-    if (current_idx >= samp_rate)
-	{
-		current_idx = samp_rate - 1;
-	}
-    int pcm_idx = (current_idx * NES_SCANLINES) / samp_rate;
-    if (raw_pcm_buffer[pcm_idx] & 0x80) 
+    if (ch->rpcm_pos >= NES_SCANLINES)
     {
-        ch->dacout = raw_pcm_buffer[pcm_idx] & 0x7F;
-        raw_pcm_buffer[pcm_idx] = 0; // Flush buffer after consume to avoid garbage leftovers
+        ch->rpcm_pos = NES_SCANLINES - 1;
     }
-	raw_pcm_idx++;
+
+    // Read IPC buffer and mark as consumed
+    if (raw_pcm_buffer[ch->rpcm_pos] & 0x80)
+    {
+        ch->dacout = raw_pcm_buffer[ch->rpcm_pos] & 0x7F;
+        raw_pcm_buffer[ch->rpcm_pos] = 0;
+    }
 }
 
 // Fills the ring buffer advancing the DMC emulation, must be called in the main audio loop
 static void nesApuFillDmcBuffer(int samples_to_generate, u32 apu_clock)
 {
     NESAPU_DPCM *ch = &apu.dpcm;
-    int cps_fp = ch->cps;
+    ch->fp = (ch->wl ? ch->wl : 428) << CPS_SHIFT; // NES DPCM Period
 
     for (int i = 0; i < samples_to_generate; i++)
     {
-        // RAW PCM ($4011)
-        nesApuReplayDmcPcmWrites(ch);
+        // rpcm_idx passes our current DS frame index
+        nesApuReplayDmcPcmWrites(ch, ch->rpcm_idx);
 
-        // DPCM
-        dmc_cycles_accumulator += cps_fp;
-        u32 period = ch->wl ? ch->wl : 428; // NES DPCM Period
-        u32 period_fp = period << CPS_SHIFT;
-
+        // -- DPCM--
         // Process DPCM steps in this sample
-        while (dmc_cycles_accumulator >= period_fp)
+        ch->accum += ch->cps;
+        while (ch->accum >= ch->fp)
         {
-            dmc_cycles_accumulator -= period_fp;
+            ch->accum -= ch->fp;
 
             // (Output Unit)
             // Only process if there are remaining bits in the current 8 bit cycle
@@ -700,24 +695,24 @@ static void nesApuFillDmcBuffer(int samples_to_generate, u32 apu_clock)
                             }
                             else if (ch->irq_enable)
                             {
-                                apu.dpcm.irq_report |= APU_STATUS_DMC_IRQ; // Raises a DMC IRQ
+                                ch->irq_report |= APU_STATUS_DMC_IRQ; // Raises a DMC IRQ
                             }
                         }
                     }
                 }
             }
         }
-        // Ring buffer output
-        s8 sample_out = 0;
-        if (!ch->mute)
-        {
-            // Convert to bipolar
-            int temp_sample = ((int)ch->dacout - 64) << DMC_VOL_FACTOR;
-            sample_out = (s8)temp_sample;
-        }
+        // Ring buffer bipolar output
+        s8 sample_out = (s8)((ch->dacout - 64) << 1);
+        dmc_ring_buffer[ch->write_cursor] = sample_out;
+        ch->write_cursor = (ch->write_cursor + 1) & DMC_MASK;
 
-        dmc_ring_buffer[dmc_write_cursor] = sample_out;
-        dmc_write_cursor = (dmc_write_cursor + 1) & DMC_MASK;
+        // Advance raw PCM sample index for this frame
+        ch->rpcm_idx++;
+        if (ch->rpcm_idx >= SAMPLES_PER_DS_FRAME)
+        {
+            ch->rpcm_idx = SAMPLES_PER_DS_FRAME - 1;
+        }
     }
 }
 
@@ -731,7 +726,7 @@ static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int 
     {
         memset(dmc_ring_buffer, 0, sizeof(dmc_ring_buffer));
         dmc_write_cursor = MIXBUFSIZE << 1;
-        dmc_cycles_accumulator = 0;
+        ch->accum = 0;
 
         snd_stopChannel(ds_chan);
 
