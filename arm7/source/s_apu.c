@@ -487,6 +487,15 @@ static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
     u32 period_fp = period << 8;
     u32 inv_clocks_fp = (1 << 24) / clocks_per_sample_fp;
 
+    // Cache LFSR and accum
+    u32 lfsr = ch->rng;
+    u32 accum_phase = sNoiseAccumulator;
+    u16 rng_mask = ch->rngshort ? 6 : 1;
+
+    // Ring Buffer pointers
+    s8 *dst = &sNoiseRingBuffer[sNoiseWriteCursor];
+    s8 *buffer_end = &sNoiseRingBuffer[NOISE_BUF_SIZE];
+
     for (int i = 0; i < samples_to_generate; i++)
     {
         s32 sample_accum = 0;
@@ -496,11 +505,11 @@ static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
         // Ensures that noise state changes within a single DS sample are correctly averaged
         while (clocks_needed > 0)
         {
-            u32 time_left_in_period = period_fp - sNoiseAccumulator;
+            u32 time_left_in_period = period_fp - accum_phase;
             u32 step = (clocks_needed < time_left_in_period) ? clocks_needed : time_left_in_period;
 
             // Determine current amplitude based on LFSR bit 0
-            s32 current_amp = (ch->rng & 1) ? -target_vol : target_vol;
+            s32 current_amp = (lfsr & 1) ? -target_vol : target_vol;
 
             // Apply mute logic (Length counter or Mute flag)
             if (ch->lc.counter == 0 || ch->mute)
@@ -509,26 +518,29 @@ static void nesApuFillNoiseBuffer(int samples_to_generate, u32 apu_clock)
             }
 
             sample_accum += current_amp * (s32)step;
-            sNoiseAccumulator += step;
+            accum_phase += step;
             clocks_needed -= step;
 
             // When period is reached, clock the LFSR
-            if (sNoiseAccumulator >= period_fp)
+            if (accum_phase >= period_fp)
             {
                 // Spec: bit 0 XOR (bit 1 or bit 6, 15bit shift)
-                u16 feedback = (ch->rng & 1) ^ ((ch->rng >> (ch->rngshort ? 6 : 1)) & 1);
+                u16 feedback = (lfsr & 1) ^ ((lfsr >> rng_mask) & 1);
                 // New Amplitude
-                ch->rng = (ch->rng >> 1) | (feedback << 14);
-                sNoiseAccumulator = 0; 
+                lfsr = (lfsr >> 1) | (feedback << 14);
+                accum_phase = 0; 
             }
         }
 
         // Finalize the average sample for this interval
-        s32 final_sample = (s32)(((s64)sample_accum * inv_clocks_fp) >> 24);
-
-        sNoiseRingBuffer[sNoiseWriteCursor] = (s8)final_sample;
-        sNoiseWriteCursor = (sNoiseWriteCursor + 1) & NOISE_MASK;
+        *dst++ = (s8)((sample_accum * (s32)inv_clocks_fp) >> 24);
+        if (dst >= buffer_end) dst = sNoiseRingBuffer;
     }
+
+    // Return values to the struct
+    ch->rng = lfsr;
+    sNoiseAccumulator = accum_phase;
+    sNoiseWriteCursor = dst - sNoiseRingBuffer;
 }
 
 /**
