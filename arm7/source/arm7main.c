@@ -31,6 +31,7 @@
 
 static s16 buffer_L[RING_BUF_SIZE] ALIGN(32);
 static s16 buffer_R[RING_BUF_SIZE] ALIGN(32);
+static s16 temp_buf[MIXBUFSIZE] ALIGN(32); // Intermediate buffer to hold processed samples
 static int buff_write_cursor = 0;
 
 // Sound status flags
@@ -66,8 +67,6 @@ __inline static int16_t clampSample16(int32_t inSample)
 void __fastcall soundMain()
 {
     if (APU_paused) return;
-
-    s16 temp_buf[MIXBUFSIZE] ALIGN(32); // Intermediate buffer to hold processed samples
 
     // Render a NES Sound frame. Generates the deltas for every APU channel.
     nesApuProcessBlipBufferChannels(MIXBUFSIZE);
