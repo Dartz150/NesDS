@@ -10,10 +10,11 @@
 #include "soundChannel.h"
 
 // PSG Hardware Render Defines
-#define PSG_APU_SQUARE_1_CH     DS_PSG_CH11
-#define PSG_APU_SQUARE_2_CH     DS_PSG_CH12
-#define PSG_APU_TRIANGLE_CH     DS_PSG_CH13
-#define PSG_APU_DMC_CH          DS_PSG_CH14
+#define PSG_APU_SQUARE_1_CH     DS_PSG_CH10
+#define PSG_APU_SQUARE_2_CH     DS_PSG_CH11
+#define PSG_APU_TRIANGLE_CH     DS_PSG_CH12
+#define PSG_APU_DMC_CH_L        DS_PSG_CH13
+#define PSG_APU_DMC_CH_R        DS_PSG_CH14
 #define PSG_APU_NOISE_CH        DS_PSG_CH15
 #define PSG_SQUARE_PAN_1_CH     64
 #define PSG_SQUARE_PAN_2_CH     64
@@ -739,7 +740,7 @@ static void nesApuSoundDmcUpdateHw(NESAPU_DPCM *ch, DS_PSG_Channel ds_chan, int 
         REG_SOUNDxPNT(ds_chan) = 0;
         REG_SOUNDxTMR(ds_chan) = TIMER_NFREQ;
         REG_SOUNDxCNT(ds_chan) = SOUNDCNT_ENABLED | SOUNDCNT_FORMAT_PCM8 | 
-                                SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(127);
+                                SOUNDCNT_MODE_LOOP | SOUNDCNT_PAN(pan) | SOUNDCNT_VOLUME(80);
 
         ch->init = true;
     }
@@ -780,12 +781,28 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
 //         Always call this after the software sound renderers to avoid sound latency.
 __inline static void nesApuPcm8Update(int sample_count)
 {
-    (apu_cfg.dmc)
-        ? snd_stopChannel(PSG_APU_DMC_CH)
-        : nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH, PSG_DMC_PAN_CH, sample_count);
-    (apu_cfg.noi)
-        ? snd_stopChannel(PSG_APU_NOISE_CH)
-        : nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH);
+    // Noise PCM8 Channel
+    if (apu_cfg.noi)
+    {
+        snd_stopChannel(PSG_APU_NOISE_CH);
+    }
+    else
+    {
+        nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH);
+    }
+    
+    // DMC PCM8 Channel
+    if (apu_cfg.dmc)
+    {
+        snd_stopChannel(PSG_APU_DMC_CH_L);
+        snd_stopChannel(PSG_APU_DMC_CH_R);
+    }
+    else
+    {
+        nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH_L, 127, sample_count);
+        nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH_R, 0, sample_count);
+
+    }
 }
 
 /// @brief Stops all the hardware DS channels
@@ -795,7 +812,8 @@ void nesApuSoundHwStop()
     snd_stopChannel(PSG_APU_SQUARE_2_CH);
     snd_stopChannel(PSG_APU_TRIANGLE_CH);
     snd_stopChannel(PSG_APU_NOISE_CH);
-    snd_stopChannel(PSG_APU_DMC_CH);
+    snd_stopChannel(PSG_APU_DMC_CH_L);
+    snd_stopChannel(PSG_APU_DMC_CH_R);
     VRC6SoundHwStop();
 }
 
