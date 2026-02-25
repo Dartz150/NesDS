@@ -9,19 +9,6 @@
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
-// PSG Hardware Render Defines
-#define PSG_APU_SQUARE_1_CH     DS_PSG_CH10
-#define PSG_APU_SQUARE_2_CH     DS_PSG_CH11
-#define PSG_APU_TRIANGLE_CH     DS_PSG_CH12
-#define PSG_APU_DMC_CH_L        DS_PSG_CH13
-#define PSG_APU_DMC_CH_R        DS_PSG_CH14
-#define PSG_APU_NOISE_CH        DS_PSG_CH15
-#define PSG_SQUARE_PAN_1_CH     64
-#define PSG_SQUARE_PAN_2_CH     64
-#define PSG_NOISE_PAN_CH        64
-#define PSG_TRIANGLE_PAN_CH     64
-#define PSG_DMC_PAN_CH          64
-
 // DMC RING BUFFER DEFINES
 #define DMC_BUF_SIZE    (512)
 #define DMC_MASK        (DMC_BUF_SIZE - 1)
@@ -765,16 +752,16 @@ __inline static void nesApuSoundHwRender(uint32_t nes_apu_clock)
 
 	// Check if the APU flags have any of the channels muted
     (apu_cfg.pu1raw)
-        ? snd_stopChannel(PSG_APU_SQUARE_1_CH)
-        : nesApuSoundPulseUpdateHw(&apu.square[0], PSG_APU_SQUARE_1_CH, apu.square[0].pan, nes_apu_clock);
+        ? snd_stopChannel(DS_APU_SQUARE_1_CH)
+        : nesApuSoundPulseUpdateHw(&apu.square[0], DS_APU_SQUARE_1_CH, apu.square[0].pan, nes_apu_clock);
 
     (apu_cfg.pu2raw)
-        ? snd_stopChannel(PSG_APU_SQUARE_2_CH)
-        : nesApuSoundPulseUpdateHw(&apu.square[1], PSG_APU_SQUARE_2_CH, apu.square[1].pan, nes_apu_clock);
+        ? snd_stopChannel(DS_APU_SQUARE_2_CH)
+        : nesApuSoundPulseUpdateHw(&apu.square[1], DS_APU_SQUARE_2_CH, apu.square[1].pan, nes_apu_clock);
 
     (apu_cfg.triraw)
-        ? snd_stopChannel(PSG_APU_TRIANGLE_CH)
-        : nesApuSoundTriangleUpdateHw(&apu.triangle, PSG_APU_TRIANGLE_CH, PSG_TRIANGLE_PAN_CH, nes_apu_clock);
+        ? snd_stopChannel(DS_APU_TRIANGLE_CH)
+        : nesApuSoundTriangleUpdateHw(&apu.triangle, DS_APU_TRIANGLE_CH, DS_TRIANGLE_PAN_CH, nes_apu_clock);
 }
 
 /// @brief Update the Noise/DMC channels PCM8 renders. Writes change the sound INSTANTLY.
@@ -784,23 +771,23 @@ __inline static void nesApuPcm8Update(int sample_count)
     // Noise PCM8 Channel
     if (apu_cfg.noi)
     {
-        snd_stopChannel(PSG_APU_NOISE_CH);
+        snd_stopChannel(DS_APU_NOISE_CH);
     }
     else
     {
-        nesApuSoundNoiseUpdateHw(&apu.noise, PSG_APU_NOISE_CH, PSG_NOISE_PAN_CH);
+        nesApuSoundNoiseUpdateHw(&apu.noise, DS_APU_NOISE_CH, DS_NOISE_PAN_CH);
     }
     
     // DMC PCM8 Channel
     if (apu_cfg.dmc)
     {
-        snd_stopChannel(PSG_APU_DMC_CH_L);
-        snd_stopChannel(PSG_APU_DMC_CH_R);
+        snd_stopChannel(DS_APU_DMC_CH_L);
+        snd_stopChannel(DS_APU_DMC_CH_R);
     }
     else
     {
-        nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH_L, 127, sample_count);
-        nesApuSoundDmcUpdateHw(&apu.dpcm, PSG_APU_DMC_CH_R, 0, sample_count);
+        nesApuSoundDmcUpdateHw(&apu.dpcm, DS_APU_DMC_CH_L, 127, sample_count);
+        nesApuSoundDmcUpdateHw(&apu.dpcm, DS_APU_DMC_CH_R, 0, sample_count);
 
     }
 }
@@ -808,12 +795,12 @@ __inline static void nesApuPcm8Update(int sample_count)
 /// @brief Stops all the hardware DS channels
 void nesApuSoundHwStop()
 {
-    snd_stopChannel(PSG_APU_SQUARE_1_CH);
-    snd_stopChannel(PSG_APU_SQUARE_2_CH);
-    snd_stopChannel(PSG_APU_TRIANGLE_CH);
-    snd_stopChannel(PSG_APU_NOISE_CH);
-    snd_stopChannel(PSG_APU_DMC_CH_L);
-    snd_stopChannel(PSG_APU_DMC_CH_R);
+    snd_stopChannel(DS_APU_SQUARE_1_CH);
+    snd_stopChannel(DS_APU_SQUARE_2_CH);
+    snd_stopChannel(DS_APU_TRIANGLE_CH);
+    snd_stopChannel(DS_APU_NOISE_CH);
+    snd_stopChannel(DS_APU_DMC_CH_L);
+    snd_stopChannel(DS_APU_DMC_CH_R);
     VRC6SoundHwStop();
 }
 

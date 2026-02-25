@@ -8,11 +8,6 @@
 // (:::) VRC6 AUDIO ENGINE (:::) //
 // Based on the VRC6 Audio spec in https://www.nesdev.org/wiki/VRC6_audio and previous code by "huiminghao".
 
-// Pulse channels must be PSG capable channels (8 - 15), channel 0/1 reserved for PCM16 buffers
-#define PSG_VRC_SAW_CH          2
-#define PSG_VRC_SQUARE_1_CH     DS_PSG_CH9
-#define PSG_VRC_SQUARE_2_CH     DS_PSG_CH10
-
 // Wave tables oversampling factor, greater values increase the wave quality, 2 ~ 8 are recommended
 #define VRC6_OVERSAMPLE         4
 
@@ -275,16 +270,16 @@ void VRC6SoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
     }
 
     (apu_cfg.vrc_p1)
-        ? snd_stopChannel(PSG_VRC_SQUARE_1_CH)
-        : vrc6SoundSquareUpdateHw(&vrc6s.square[0], PSG_VRC_SQUARE_1_CH, v_pu1_pan, nes_apu_clock, ds_sound_freq);
+        ? snd_stopChannel(DS_VRC_SQUARE_1_CH)
+        : vrc6SoundSquareUpdateHw(&vrc6s.square[0], DS_VRC_SQUARE_1_CH, v_pu1_pan, nes_apu_clock, ds_sound_freq);
 
     (apu_cfg.vrc_p2)
-        ? snd_stopChannel(PSG_VRC_SQUARE_2_CH)
-        : vrc6SoundSquareUpdateHw(&vrc6s.square[1], PSG_VRC_SQUARE_2_CH, v_pu2_pan, nes_apu_clock, ds_sound_freq);
+        ? snd_stopChannel(DS_VRC_SQUARE_2_CH)
+        : vrc6SoundSquareUpdateHw(&vrc6s.square[1], DS_VRC_SQUARE_2_CH, v_pu2_pan, nes_apu_clock, ds_sound_freq);
 
     (apu_cfg.vrc_saw)
-        ? snd_stopChannel(PSG_VRC_SAW_CH)
-        : vrc6SoundSawUpdateHw(&vrc6s.saw, PSG_VRC_SAW_CH, 64, nes_apu_clock, ds_sound_freq);
+        ? snd_stopChannel(DS_VRC_SAW_CH)
+        : vrc6SoundSawUpdateHw(&vrc6s.saw, DS_VRC_SAW_CH, 64, nes_apu_clock, ds_sound_freq);
 }
 
 static void VRC6SoundWriteSquare(VRC6_SQUARE *ch, Uint address, Uint value)
@@ -344,9 +339,9 @@ void VRC6SoundWriteB000(Uint address, Uint value)
 
 void VRC6SoundHwStop()
 {
-    snd_stopChannel(PSG_VRC_SQUARE_1_CH);
-    snd_stopChannel(PSG_VRC_SQUARE_2_CH);
-    snd_stopChannel(PSG_VRC_SAW_CH);
+    snd_stopChannel(DS_VRC_SQUARE_1_CH);
+    snd_stopChannel(DS_VRC_SQUARE_2_CH);
+    snd_stopChannel(DS_VRC_SAW_CH);
 }
 
 void __fastcall vrc6SoundInit()
