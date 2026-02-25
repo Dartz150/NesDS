@@ -69,6 +69,7 @@ int main()
 	while (1) 
 	{
 		apuVblankSync();
+		mmc5VblankSync();
 		if ( 0 == (REG_KEYINPUT & (KEY_DOWN | KEY_B | KEY_L | KEY_R))) 
 		{
 			sys_exit();

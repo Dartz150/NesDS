@@ -6,6 +6,7 @@
 #include "c_defs.h"
 #include "s_vrc6.h"
 #include "s_fds.h"
+#include "s_mmc5.h"
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
@@ -786,6 +787,7 @@ void nesApuSoundHwStop()
     snd_stopChannel(DS_APU_DMC_CH_L);
     snd_stopChannel(DS_APU_DMC_CH_R);
     VRC6SoundHwStop();
+    mmc5SoundHwStop();
 }
 
 // --- SOFTWARE SOUND RENDERS (blip_buf) ---
@@ -1033,6 +1035,7 @@ __fastcall void nesApuProcessChannels(int sample_count, Uint32 nes_apu_clock, Ui
             }
             VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
             nesApuPcm8Update(sample_count);
+            mmc5SoundHwUpdate(nes_apu_clock, ds_sound_freq);
         }
     }
 
@@ -1284,6 +1287,10 @@ void apuSoundWrite(Uint address, Uint value)
 	{
 		FDSSoundWrite(address, value);
 	}
+    else if (has_mmc5 && address >= 0x5000 && address <= 0x5015)
+    {
+        mmc5SoundWrite(address, value);
+    }
 	// VRC6 (KONAMI SOUND CHIP)
 	else if (has_vrc6 && address >= VRC6_MIN_BASE)
 	{

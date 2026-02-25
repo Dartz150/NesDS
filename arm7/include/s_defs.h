@@ -42,7 +42,7 @@ extern "C" {
 #define DS_EXP_PCM_SLOT_4      15
 
 #define DS_VRC_SAW_CH          DS_EXP_PCM_SLOT_1  // PCM8 Saw Wavetable Oscillator
-#define DS_MMC5_PCM_CH         DS_EXP_PCM_SLOT_1  // PCM Render 
+#define DS_MMC5_PCM_CH         DS_EXP_PCM_SLOT_1  // PCM Render
 
 // Expansion PSG, can also be used as PCM8/16 if necessary (Slots 10-13 available for real-time Squares Waves)
 #define DS_EXP_PSG_SLOT_1      DS_PSG_CH10

@@ -34,21 +34,27 @@ void writeAPU(u32 val, u32 addr)
 {
 	// We can't process this data directly since we would need to sync the ARM7 and the
 	// ARM9 very tightly, which is costly. We use this sync method instead.
-	if (addr == 0x4011)
-	{
-        // Instead of sending through the same FIFO channel or wait,
-		// We note the value in the time history of the current frame.
-        // __scanline is our timestamp.
-		unsigned char *out = IPC_PCMDATA;
-        out[__scanline] = val | 0x80;
+	// This handles ($4011) APU RAW PCM writes and ($5011) MMC5 PCM writes
+	if (addr == 0x4011 || addr == 0x5011)
+    {
+        unsigned char *out = (unsigned char *)IPC_PCMDATA;
+        // The mapper already filters the MMC5 0 irq flag, we should only receive tje PCM data.
+        out[__scanline] = (addr == 0x4011) ? (val | 0x80) : val;
+        IPC_RAWPCMEN = 1;
     }
 	else
 	{
-		if (IPC_APUW - IPC_APUR < 256 && addr != 0x4011) 
+		if (IPC_APUW - IPC_APUR < 256 && addr != 0x4011 && addr != 0x5011) 
 		{
 			bool send = false;
 
-			// VRC6 sound addresses data check (mapper 24 and 26).
+			// Standard NES APU sound.
+			if (addr < 0x4018) 
+			{
+				send = true;
+			}
+
+			// VRC6 sound expansion (mapper 24 and 26).
 			if ((0x9000 <= addr && addr <= 0x9002) || (0xA000 <= addr && addr <= 0xA002) || (0xB000 <= addr && addr <= 0xB002)) 
 			{
 				if (debuginfo[MAPPER] == 24 || debuginfo[MAPPER] == 26 || (nsfHeader.ExtraChipSelect & VRC6_AUDIO || debuginfo[MAPPER] == 256)) 
@@ -57,7 +63,7 @@ void writeAPU(u32 val, u32 addr)
 				}
 			}
 
-			// FDS sound addresses data check (mapper 20).
+			// FDS sound expansion (mapper 20).
 			if (0x4040 <= addr && addr < 0x4090) 
 			{
 				if (debuginfo[MAPPER] == 20 || (nsfHeader.ExtraChipSelect & FDS_AUDIO || debuginfo[MAPPER] == 256))
@@ -66,18 +72,16 @@ void writeAPU(u32 val, u32 addr)
 				}
 			}
 
-			// VRC7 sound addresses data check (add appropriate address range).
-			// if ((VRC7_ADDRESS_RANGE) && (nsfHeader.ExtraChipSelect & VRC7_AUDIO)) {
-			//     send = true;
-			// }
-
-			// Add similar checks for other sound chips like MMC5, Namco 163, Sunsoft 5B, VT02+...
-
-			// Standard APU sound addresses data check.
-			if (addr < 0x4018) 
+			// MMC5 sound expansion (mapper 05)
+			if (addr >= 0x5000 && addr <= 0x5015)
 			{
-				send = true;
-			}
+                if (debuginfo[MAPPER] == 5 || (nsfHeader.ExtraChipSelect & MMC5_AUDIO))
+				{
+                    send = true;
+                }
+            }
+
+			// Add similar checks for other sound chips like Namco 163, Sunsoft 5B, VT02+...
 
 			if (send) 
 			{

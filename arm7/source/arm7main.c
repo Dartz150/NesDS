@@ -7,6 +7,7 @@
 #include "s_defs.h"
 #include "s_vrc6.h"
 #include "s_fds.h"
+#include "s_mmc5.h"
 
 // Information sources:
 // - https://www.nesdev.org/wiki/APU_Mixer
@@ -45,8 +46,8 @@ void setDsSoundFreq()
 
 void setApuRegion()
 {
-	// VRC6/FDS titles are always NTSC
-	if (has_vrc6 || has_fds)
+	// VRC6/FDS/MMC5 titles are always NTSC
+	if (has_vrc6 || has_fds || has_mmc5)
 	{
 		nes_apu_clock = NES_APU_NTSC;
 	}
@@ -202,13 +203,14 @@ void lidinterrupt(void)
 	clearSoundBuffers();
 }
 
-// Reinits the whole APU + Sound exansions
+// Reinits the whole APU + Sound expansions
 void resetApu()
 {
 	// Only detect expansions once per reset
     const int mapper = IPC_MAPPER;
     has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
     has_fds  = (mapper == 20 || mapper == 256);
+	has_mmc5 = (mapper == 5 || mapper == 256);
 
 	clearSoundBuffers();
 	setApuRegion();
@@ -221,6 +223,11 @@ void resetApu()
 	if (has_fds)
 	{
 		fdsSoundInit(nes_apu_clock, ds_sound_freq);
+	}
+	
+	if (has_mmc5)
+	{
+		mmc5SoundInit();
 	}
 	IPC_APUW = 0;
 	IPC_APUR = 0;

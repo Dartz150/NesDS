@@ -53,6 +53,7 @@ bool getPulseMode();
 
 extern u32 apu_internal_state;
 extern ApuConfig apu_cfg;
+extern bool has_mmc5;
 extern bool has_vrc6;
 extern bool has_fds;
 

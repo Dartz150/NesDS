@@ -9,6 +9,7 @@
 ApuConfig apu_cfg;
 
 // Sound Expansion flags
+bool has_mmc5;
 bool has_vrc6;
 bool has_fds;
 
