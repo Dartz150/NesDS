@@ -8,7 +8,7 @@ countdown:	.word 0
 irqEn:		.byte 0
 cmd:		.byte 0
 video:		.byte 0		;@ Number of cycles per scanline
-audioReg:   .byte 0		;@ Store selected register via $C000
+audioReg:   .byte 0		;@ Store selected register via $C000 TODO: Fix graphical glitches
 .align
 ;@----------------------------------------------------------------------------
 .section .text,"ax"

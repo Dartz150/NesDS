@@ -56,9 +56,9 @@ extern "C" {
 #define DS_MMC5_SQUARE_1_CH    DS_EXP_PSG_SLOT_1  // PSG Hardware PSG Square
 #define DS_MMC5_SQUARE_2_CH    DS_EXP_PSG_SLOT_2  // PSG Hardware PSG Square
 
-#define DS_SS5B_SQ1_CH         DS_EXP_PSG_SLOT_1
-#define DS_SS5B_SQ2_CH         DS_EXP_PSG_SLOT_2
-#define DS_SS5B_SQ3_CH         DS_EXP_PSG_SLOT_3
+#define DS_SS5B_SQ1_CH         DS_EXP_PSG_SLOT_1  // PSG Hardware PSG Square
+#define DS_SS5B_SQ2_CH         DS_EXP_PSG_SLOT_2  // PSG Hardware PSG Square
+#define DS_SS5B_SQ3_CH         DS_EXP_PSG_SLOT_3  // PSG Hardware PSG Square
 
 
 // -----------------------------------------------------------------------------

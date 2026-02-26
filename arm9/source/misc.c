@@ -32,6 +32,7 @@ void reg4015interrupt(u32 msg, void *none)
 ******************************/
 void writeAPU(u32 val, u32 addr) 
 {
+	// --- APU RAW PCM and MMC5 PCM	writes
 	// We can't process this data directly since we would need to sync the ARM7 and the
 	// ARM9 very tightly, which is costly. We use this sync method instead.
 	// This handles ($4011) APU RAW PCM writes and ($5011) MMC5 PCM writes
@@ -48,13 +49,13 @@ void writeAPU(u32 val, u32 addr)
 		{
 			bool send = false;
 
-			// Standard NES APU sound.
+			// --- Standard NES APU sound ---
 			if (addr < 0x4018) 
 			{
 				send = true;
 			}
 
-			// VRC6 sound expansion (mapper 24 and 26).
+			// --- VRC6 sound expansion (mapper 24 and 26) ---
 			if ((0x9000 <= addr && addr <= 0x9002) || (0xA000 <= addr && addr <= 0xA002) || (0xB000 <= addr && addr <= 0xB002)) 
 			{
 				if (debuginfo[MAPPER] == 24 || debuginfo[MAPPER] == 26 || (nsfHeader.ExtraChipSelect & VRC6_AUDIO || debuginfo[MAPPER] == 256)) 
@@ -63,7 +64,7 @@ void writeAPU(u32 val, u32 addr)
 				}
 			}
 
-			// FDS sound expansion (mapper 20).
+			// --- FDS sound expansion (mapper 20) ---
 			if (0x4040 <= addr && addr < 0x4090) 
 			{
 				if (debuginfo[MAPPER] == 20 || (nsfHeader.ExtraChipSelect & FDS_AUDIO || debuginfo[MAPPER] == 256))
@@ -72,7 +73,7 @@ void writeAPU(u32 val, u32 addr)
 				}
 			}
 
-			// MMC5 sound expansion (mapper 05)
+			// --- MMC5 sound expansion (mapper 05) ---
 			if (addr >= 0x5000 && addr <= 0x5015)
 			{
                 if (debuginfo[MAPPER] == 5 || (nsfHeader.ExtraChipSelect & MMC5_AUDIO))
@@ -90,7 +91,7 @@ void writeAPU(u32 val, u32 addr)
                 }
             }
 
-			// Add similar checks for other sound chips like Namco 163, Sunsoft 5B, VT02+...
+			// Add similar checks for other sound chips like Namco 163, VT02+...
 
 			if (send) 
 			{

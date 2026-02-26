@@ -211,8 +211,8 @@ void resetApu()
     const int mapper = IPC_MAPPER;
     has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
     has_fds  = (mapper == 20 || mapper == 256);
-	has_mmc5 = (mapper == 5 || mapper == 256);
-	has_ss5b =  (mapper == 69 || mapper == 256 || mapper == 45);
+	has_mmc5 = (mapper == 5  || mapper == 256);
+	has_ss5b = (mapper == 69 || mapper == 256);
 
 	clearSoundBuffers();
 	setApuRegion();
