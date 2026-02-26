@@ -8,6 +8,7 @@
 #include "s_fds.h"
 #include "s_mmc5.h"
 #include "s_ss5b.h"
+#include "s_n163.h"
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
@@ -787,9 +788,12 @@ void nesApuSoundHwStop()
     snd_stopChannel(DS_APU_NOISE_CH);
     snd_stopChannel(DS_APU_DMC_CH_L);
     snd_stopChannel(DS_APU_DMC_CH_R);
+
+    // Sound Expansions
     VRC6SoundHwStop();
     mmc5SoundHwStop();
     ss5bSoundHwStop();
+    n163SoundHwStop();
 }
 
 // --- SOFTWARE SOUND RENDERS (blip_buf) ---
@@ -1035,10 +1039,13 @@ __fastcall void nesApuProcessChannels(int sample_count, Uint32 nes_apu_clock, Ui
             {
                 nesApuSoundHwRender(nes_apu_clock);
             }
-            VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
             nesApuPcm8Update(sample_count);
+            
+            // Sound expansions
+            VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
             mmc5SoundHwUpdate(nes_apu_clock, ds_sound_freq);
             ss5bSoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            n163SoundHwUpdate(nes_apu_clock, ds_sound_freq);
         }
     }
 
@@ -1300,6 +1307,11 @@ void apuSoundWrite(Uint address, Uint value)
     {
         ss5bSoundWrite(address & 0x0F, value);
     }
+    // NAMCOT 163 SOUND EXPANSION
+    else if (has_n163 && address >= 0xF800 && address <= 0xF87F)
+    {
+        n163SoundWrite(address & 0x7F, value);
+    }
 	// VRC6 (KONAMI SOUND CHIP)
 	else if (has_vrc6 && address >= VRC6_MIN_BASE)
 	{
@@ -1422,5 +1434,4 @@ void __fastcall apuSoundInit(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 	}
 
 	apuSoundWrite(0x4015, 0x0f);
-	apu.dpcm.first = 1;
 }

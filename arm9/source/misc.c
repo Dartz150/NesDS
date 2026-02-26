@@ -9,6 +9,15 @@
 #include "menu.h"
 #include "NesMachine.h"
 
+typedef struct
+{
+    u8 ram[128];
+    u8 addr;
+    u8 autoInc;
+} n163_t;
+
+n163_t n163;
+
 int save_slots = 0;
 int slots_num = 0;
 bool use_saves_dir = false;
@@ -91,7 +100,16 @@ void writeAPU(u32 val, u32 addr)
                 }
             }
 
-			// Add similar checks for other sound chips like Namco 163, VT02+...
+			// --- Namco 163 sound expansion ---
+			if (addr >= 0xF800 && addr <= 0xF87F) 
+			{
+				if (debuginfo[MAPPER] == 19) 
+				{
+					send = true;
+				}
+			}
+
+			// TODO: Implement VRC7 sound expansion
 
 			if (send) 
 			{
@@ -101,6 +119,42 @@ void writeAPU(u32 val, u32 addr)
 			}
 		}
 	}
+}
+
+/***************************************************
+* Namco 163 Sound Expansion funcs (hooked in map19.s)
+****************************************************/
+
+// Write to $F800 (Direction port)
+void n163_write_addr(u8 val)
+{
+    n163.addr = val & 0x7F;
+    n163.autoInc = val & 0x80;
+}
+
+// Write to $4800 (Data port)
+void n163_write_data(u8 val)
+{
+    n163.ram[n163.addr] = val;
+    
+    // Send to the ARM7 (0xF800 + offset)
+    writeAPU(val, 0xF800 + n163.addr);
+
+    if (n163.autoInc)
+	{
+        n163.addr = (n163.addr + 1) & 0x7F;
+    }
+}
+
+// Read from $4800 (Data port)
+u8 n163_read_data(void)
+{
+    u8 val = n163.ram[n163.addr];
+    if (n163.autoInc)
+	{
+        n163.addr = (n163.addr + 1) & 0x7F;
+    }
+    return val;
 }
 
 /*****************************

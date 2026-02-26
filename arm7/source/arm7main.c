@@ -9,6 +9,7 @@
 #include "s_fds.h"
 #include "s_mmc5.h"
 #include "s_ss5b.h"
+#include "s_n163.h"
 
 // Information sources:
 // - https://www.nesdev.org/wiki/APU_Mixer
@@ -213,6 +214,7 @@ void resetApu()
     has_fds  = (mapper == 20 || mapper == 256);
 	has_mmc5 = (mapper == 5  || mapper == 256);
 	has_ss5b = (mapper == 69 || mapper == 256);
+	has_n163 = (mapper == 19);
 
 	clearSoundBuffers();
 	setApuRegion();
@@ -236,6 +238,11 @@ void resetApu()
 	{
 		ss5bSoundInit();
 	}
+
+    if (has_n163)
+    {
+        n163SoundInit(nes_apu_clock, ds_sound_freq);
+    }
 	IPC_APUW = 0;
 	IPC_APUR = 0;
 }

@@ -45,21 +45,22 @@ mapper210init:
 ;@----------------------------------------------------------------------------
 write0:
 	cmp addy,#0x4800
+	beq n163_write_data		;@ jump to func in misc.c
 	blo empty_W
-	and r1,addy,#0x7800
+    and r1,addy,#0x7800
 	cmp r1,#0x5000
 	streqb_ r0,counter+2
 	moveq r0,#0
 	beq rp2A03SetIRQPin
 
 	cmp r1,#0x5800
-	bxne lr
-	strb_ r0,counter+3
+	streqb_ r0,counter+2
 	mov r0,#0
 	b rp2A03SetIRQPin
 ;@----------------------------------------------------------------------------
 map19_r:
 	cmp addy,#0x4800
+    beq n163_read_data     ;@ jump to func in misc.c
 	blo empty_R
 	mov r0, #0
 
@@ -128,6 +129,10 @@ map19_E:
 	beq map89_
 	cmp r1,#0x7000
 	beq mapCD_
+	cmp r1, #0x7800        ;@ Check range $F800-$FFFF
+    beq n163_write_addr    ;@ jump to func in misc.c
+	cmp r1,#0x6000
+    beq map89_
 	cmp r1,#0x6800
 	bxne lr
 

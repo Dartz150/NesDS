@@ -57,6 +57,7 @@ extern bool has_mmc5;
 extern bool has_vrc6;
 extern bool has_fds;
 extern bool has_ss5b;
+extern bool has_n163;
 
 #ifdef __cplusplus
 }

@@ -6,7 +6,7 @@
 #include "soundChannel.h"
 
 // (:::) SUNSOFT 5B AUDIO ENGINE (:::) //
-// Based on the MMC5 Audio spec in https://www.nesdev.org/wiki/MMC5_audio, code by "DartzSoryu".
+// Based on the S5B Audio spec in https://www.nesdev.org/wiki/Sunsoft_5B_audio, code by "DartzSoryu".
 
 typedef struct {
     u16 period;    // 12-bit frequency period
