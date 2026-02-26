@@ -7,6 +7,7 @@
 #include "s_vrc6.h"
 #include "s_fds.h"
 #include "s_mmc5.h"
+#include "s_ss5b.h"
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
@@ -788,6 +789,7 @@ void nesApuSoundHwStop()
     snd_stopChannel(DS_APU_DMC_CH_R);
     VRC6SoundHwStop();
     mmc5SoundHwStop();
+    ss5bSoundHwStop();
 }
 
 // --- SOFTWARE SOUND RENDERS (blip_buf) ---
@@ -1036,6 +1038,7 @@ __fastcall void nesApuProcessChannels(int sample_count, Uint32 nes_apu_clock, Ui
             VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
             nesApuPcm8Update(sample_count);
             mmc5SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            ss5bSoundHwUpdate(nes_apu_clock, ds_sound_freq);
         }
     }
 
@@ -1282,14 +1285,20 @@ void apuSoundWrite(Uint address, Uint value)
 		}
 		return;
 	}
-	// FDS (FAMICOM DISK SYSTEM ADDITIONAL CHANNEL) TODO: REFACTOR WITH CASES
+	// FDS (FAMICOM DISK SYSTEM ADDITIONAL CHANNEL)
 	if (has_fds && address >= FDS_BASE && address < FDS_END) 
 	{
 		FDSSoundWrite(address, value);
 	}
+    // MMC5 SOUND EXPANSION
     else if (has_mmc5 && address >= 0x5000 && address <= 0x5015)
     {
         mmc5SoundWrite(address, value);
+    }
+    // SUNSOFT 5B SOUND EXPANSION
+    else if (has_ss5b && address >= 0xC000 && address <= 0xC00F)
+    {
+        ss5bSoundWrite(address & 0x0F, value);
     }
 	// VRC6 (KONAMI SOUND CHIP)
 	else if (has_vrc6 && address >= VRC6_MIN_BASE)

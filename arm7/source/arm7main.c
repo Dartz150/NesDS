@@ -8,6 +8,7 @@
 #include "s_vrc6.h"
 #include "s_fds.h"
 #include "s_mmc5.h"
+#include "s_ss5b.h"
 
 // Information sources:
 // - https://www.nesdev.org/wiki/APU_Mixer
@@ -211,6 +212,7 @@ void resetApu()
     has_vrc6 = (mapper == 24 || mapper == 26 || mapper == 256);
     has_fds  = (mapper == 20 || mapper == 256);
 	has_mmc5 = (mapper == 5 || mapper == 256);
+	has_ss5b =  (mapper == 69 || mapper == 256 || mapper == 45);
 
 	clearSoundBuffers();
 	setApuRegion();
@@ -228,6 +230,11 @@ void resetApu()
 	if (has_mmc5)
 	{
 		mmc5SoundInit();
+	}
+
+	if (has_ss5b)
+	{
+		ss5bSoundInit();
 	}
 	IPC_APUW = 0;
 	IPC_APUR = 0;

@@ -81,6 +81,15 @@ void writeAPU(u32 val, u32 addr)
                 }
             }
 
+			// --- Sunsoft 5B sound expansion (Mapper 69) ---
+            if (addr >= 0xC000 && addr <= 0xC00F)
+            {
+                if (debuginfo[MAPPER] == 69)
+                {
+                    send = true;
+                }
+            }
+
 			// Add similar checks for other sound chips like Namco 163, Sunsoft 5B, VT02+...
 
 			if (send) 

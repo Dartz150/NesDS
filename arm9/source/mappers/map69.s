@@ -8,6 +8,8 @@ countdown:	.word 0
 irqEn:		.byte 0
 cmd:		.byte 0
 video:		.byte 0		;@ Number of cycles per scanline
+audioReg:   .byte 0		;@ Store selected register via $C000
+.align
 ;@----------------------------------------------------------------------------
 .section .text,"ax"
 ;@----------------------------------------------------------------------------
@@ -20,7 +22,7 @@ video:		.byte 0		;@ Number of cycles per scanline
 ;@ Hebereke
 mapper69init:
 ;@----------------------------------------------------------------------------
-	.word write0,write1,rom_W,rom_W			;@ There is a music channel also
+	.word write0,write1,write2,write3,rom_W,rom_W			;@ There is a music channel also
 
 	mov r1,#-1
 	mov r1,r1,lsr#16
@@ -49,6 +51,24 @@ write1:		;@ $A000
 	ldrcc r2,=writeCHRTBL
 	adrcs r2,commandList
 	ldr pc,[r2,r1,lsr#27]
+;@----------------------------------------------------------------------------
+write2:		;@ $A000
+;@----------------------------------------------------------------------------
+	and r0, r0, #0x0F      ;@ only the 4 LSB
+    strb_ r0, audioReg
+    bx lr
+;@----------------------------------------------------------------------------
+write3:		;@ $A000
+;@----------------------------------------------------------------------------
+	stmfd sp!, {r0-r1, lr}
+    ldrb_ r1, audioReg     ;@ r1 = dst reg (0-15)
+    ;@ r0 already has the value (0-255)
+    
+    ;@ Send to the sound write dispatcher
+    add r1, r1, #0xC000    
+    bl writeAPU            ;@ (val r0, addr r1)
+    ldmfd sp!, {r0-r1, lr}
+    bx lr
 ;@----------------------------------------------------------------------------
 commandList:	.word mapJinx,map89_,mapAB_,mapCD_,mirrorKonami_,irqEn69,irqA69,irqB69
 ;@----------------------------------------------------------------------------
