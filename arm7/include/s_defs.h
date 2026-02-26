@@ -62,14 +62,14 @@ extern "C" {
 
 // N163 sound uses all of our free sound channel slots in PCM8 mode.
 // Usually the n163 never gets combined with other extra expansion chips, so this should be fine for retail games.
-#define DS_N163_CH_8		   DS_EXP_PCM_SLOT_1  // PCM8 Waveram oscilalator
-#define DS_N163_CH_7	       DS_EXP_PCM_SLOT_2  // PCM8 Waveram oscilalator
-#define DS_N163_CH_6	       DS_EXP_PSG_SLOT_1  // PCM8 Waveram oscilalator
-#define DS_N163_CH_5           DS_EXP_PSG_SLOT_2  // PCM8 Waveram oscilalator
-#define DS_N163_CH_4	       DS_EXP_PSG_SLOT_3  // PCM8 Waveram oscilalator
-#define DS_N163_CH_3	       DS_EXP_PSG_SLOT_4  // PCM8 Waveram oscilalator
-#define DS_N163_CH_2	       DS_EXP_PCM_SLOT_3  // PCM8 Waveram oscilalator
-#define DS_N163_CH_1	       DS_EXP_PCM_SLOT_4  // PCM8 Waveram oscilalator
+#define DS_N163_CH_8		   DS_EXP_PCM_SLOT_1  // PCM8 Waveram oscillator
+#define DS_N163_CH_7	       DS_EXP_PCM_SLOT_2  // PCM8 Waveram oscillator
+#define DS_N163_CH_6	       DS_EXP_PSG_SLOT_1  // PCM8 Waveram oscillator
+#define DS_N163_CH_5           DS_EXP_PSG_SLOT_2  // PCM8 Waveram oscillator
+#define DS_N163_CH_4	       DS_EXP_PSG_SLOT_3  // PCM8 Waveram oscillator
+#define DS_N163_CH_3	       DS_EXP_PSG_SLOT_4  // PCM8 Waveram oscillator
+#define DS_N163_CH_2	       DS_EXP_PCM_SLOT_3  // PCM8 Waveram oscillator
+#define DS_N163_CH_1	       DS_EXP_PCM_SLOT_4  // PCM8 Waveram oscillator
 
 // -----------------------------------------------------------------------------
 // MIXER SETTINGS

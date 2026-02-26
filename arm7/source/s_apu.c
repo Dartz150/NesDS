@@ -975,6 +975,7 @@ __fastcall void nesApuProcessChannels(int sample_count, Uint32 nes_apu_clock, Ui
             clocks_to_run = clocks_until_next_tick;
 
         // RENDER SLICES
+        // TODO: Ditch software renders and make the hardware renders the main sound engine.
         nesApuSoundPulseRenderBlipSlice(&apu.square[0], master_blip, clocks_to_run, time_done, apu_cfg.pu1);
         nesApuSoundPulseRenderBlipSlice(&apu.square[1], master_blip, clocks_to_run, time_done, apu_cfg.pu2);
         nesApuSoundTriangleRenderBlipSlice(&apu.triangle, master_blip, clocks_to_run, time_done, apu_cfg.tri);
@@ -1035,17 +1036,35 @@ __fastcall void nesApuProcessChannels(int sample_count, Uint32 nes_apu_clock, Ui
                 apu.fc = 0;
             }
             // --- UPDATE DS PSG/PCM8 HARDWARE IF ENABLED ---
+
+            nesApuPcm8Update(sample_count);
+
+            // TODO: Ditch software renders and make the hardware renders the main sound engine.
             if (apu_cfg.hw_render)
             {
                 nesApuSoundHwRender(nes_apu_clock);
             }
-            nesApuPcm8Update(sample_count);
             
             // Sound expansions
-            VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
-            mmc5SoundHwUpdate(nes_apu_clock, ds_sound_freq);
-            ss5bSoundHwUpdate(nes_apu_clock, ds_sound_freq);
-            n163SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            if (has_vrc6)
+            {
+                VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            }
+
+            if (has_mmc5)
+            {
+                mmc5SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            }
+
+            if (has_ss5b)
+            {
+                ss5bSoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            }
+
+            if (has_n163)
+            {
+                n163SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+            }
         }
     }
 
