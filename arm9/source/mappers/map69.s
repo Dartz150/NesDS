@@ -8,7 +8,7 @@ countdown:	.word 0
 irqEn:		.byte 0
 cmd:		.byte 0
 video:		.byte 0		;@ Number of cycles per scanline
-audioReg:   .byte 0		;@ Store selected register via $C000 TODO: Fix graphical glitches
+audioReg:   .byte 0		;@ Store selected register via $C000
 .align
 ;@----------------------------------------------------------------------------
 .section .text,"ax"
@@ -22,7 +22,12 @@ audioReg:   .byte 0		;@ Store selected register via $C000 TODO: Fix graphical gl
 ;@ Hebereke
 mapper69init:
 ;@----------------------------------------------------------------------------
-	.word write0,write1,write2,write3,rom_W,rom_W			;@ There is a music channel also
+	.word write0,write1,rom_W,rom_W			;@ There is a music channel also
+
+    ldr r1, =write2
+    str_ r1, m6502WriteTbl+24  @ $C000 - $DFFF Slot
+    ldr r1, =write3
+    str_ r1, m6502WriteTbl+28  @ $E000 - $FFFF Slot
 
 	mov r1,#-1
 	mov r1,r1,lsr#16
@@ -52,13 +57,13 @@ write1:		;@ $A000
 	adrcs r2,commandList
 	ldr pc,[r2,r1,lsr#27]
 ;@----------------------------------------------------------------------------
-write2:		;@ $A000
+write2:		;@ $C000-$DFFF Sunsoft 5B Audio Register Select
 ;@----------------------------------------------------------------------------
 	and r0, r0, #0x0F      ;@ only the 4 LSB
     strb_ r0, audioReg
     bx lr
 ;@----------------------------------------------------------------------------
-write3:		;@ $A000
+write3:		;@ $E000-$FFFF Sunsoft 5B Audio Register Value
 ;@----------------------------------------------------------------------------
 	stmfd sp!, {r0-r1, lr}
     ldrb_ r1, audioReg     ;@ r1 = dst reg (0-15)
