@@ -8,6 +8,11 @@
 counter:	.word 0
 reg0:		.byte 0
 reg1:		.byte 0
+n163_addr:  .byte 0
+n163_inc:   .byte 0
+.align
+n163_ram:   .space 128 @ N163 Internal RAM
+.align
 ;@----------------------------------------------------------------------------
 .section .text,"ax"
 ;@----------------------------------------------------------------------------
@@ -44,8 +49,9 @@ mapper210init:
 
 ;@----------------------------------------------------------------------------
 write0:
+;@----------------------------------------------------------------------------
 	cmp addy,#0x4800
-	beq n163_write_data		;@ jump to func in misc.c
+	beq n163_write_data		;@ Write N163 Sound Expansion Data
 	blo empty_W
     and r1,addy,#0x7800
 	cmp r1,#0x5000
@@ -58,9 +64,35 @@ write0:
 	mov r0,#0
 	b rp2A03SetIRQPin
 ;@----------------------------------------------------------------------------
+n163_write_data:			 ;@ Write to $4800 (Data port)
+;@----------------------------------------------------------------------------
+    stmfd sp!, {r0, lr}
+    ldrb_ r1, n163_addr      ;@ Index
+    ldr r2, =n163_ram        ;@ Load N163 ram
+    strb r0, [r2, r1]
+    
+    add r1, r1, #0xF800
+    
+    stmfd sp!, {r1}
+    bl writeAPU     		 ;@ Jump to dispatcher in misc.c
+    ldmfd sp!, {r1}
+    ldmfd sp!, {r0, lr}
+    
+    ldrb_ r2, n163_inc		 ;@ Auto-increment Write
+    tst r2, #0x80
+    bxeq lr                  ;@ If there's no auto-inc, exit
+    
+    sub r1, r1, #0xF800      ;@ Index
+    add r1, r1, #1
+    and r1, r1, #0x7F
+    strb_ r1, n163_addr
+    
+    bx lr
+;@----------------------------------------------------------------------------
 map19_r:
+;@----------------------------------------------------------------------------
 	cmp addy,#0x4800
-    beq n163_read_data     ;@ jump to func in misc.c
+    beq n163_read_data		 ;@ Read N163 Sound Expansion Data
 	blo empty_R
 	mov r0, #0
 
@@ -75,6 +107,21 @@ map19_r:
 	biceq r0, r0, #0x80
 	bx lr
 
+;@----------------------------------------------------------------------------
+n163_read_data:				 ;@ Read from $4800 (Data port)
+;@----------------------------------------------------------------------------
+    ldrb_ r1, n163_addr
+    ldr r2, =n163_ram
+    ldrb r0, [r2, r1]
+    
+    ldrb_ r2, n163_inc		 ;@ Also handle Read Auto-Increment
+    tst r2, #0x80
+    bxeq lr
+    
+    add r1, r1, #1
+    and r1, r1, #0x7F
+    strb_ r1, n163_addr
+    bx lr
 ;@----------------------------------------------------------------------------
 map19_8:
 ;@----------------------------------------------------------------------------
@@ -130,7 +177,7 @@ map19_E:
 	cmp r1,#0x7000
 	beq mapCD_
 	cmp r1, #0x7800        ;@ Check range $F800-$FFFF
-    beq n163_write_addr    ;@ jump to func in misc.c
+    beq n163_write_addr	   ;@Write N163 Sound Expansion Data Address
 	cmp r1,#0x6000
     beq map89_
 	cmp r1,#0x6800
@@ -141,6 +188,14 @@ map19_E:
 	and r1, r0, #0x80
 	strb_ r1, reg1
 	b mapAB_
+;@----------------------------------------------------------------------------
+n163_write_addr:	;@ Write to $F800 (Direction port)
+;@----------------------------------------------------------------------------
+    and r1, r0, #0x7F
+    strb_ r1, n163_addr
+    and r1, r0, #0x80
+    strb_ r1, n163_inc
+    bx lr
 ;@----------------------------------------------------------------------------
 map210_C:			;@ Enable WRAM.
 ;@----------------------------------------------------------------------------
