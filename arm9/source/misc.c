@@ -58,7 +58,7 @@ void writeAPU(u32 val, u32 addr)
 			// --- VRC6 sound expansion (mapper 24 and 26) ---
 			if ((0x9000 <= addr && addr <= 0x9002) || (0xA000 <= addr && addr <= 0xA002) || (0xB000 <= addr && addr <= 0xB002)) 
 			{
-				if (debuginfo[MAPPER] == 24 || debuginfo[MAPPER] == 26 || (nsfHeader.ExtraChipSelect & VRC6_AUDIO || debuginfo[MAPPER] == 256)) 
+				if (debuginfo[MAPPER] == 24 || debuginfo[MAPPER] == 26 || debuginfo[MAPPER] == 256) 
 				{
 					send = true;
 				}
@@ -67,7 +67,7 @@ void writeAPU(u32 val, u32 addr)
 			// --- FDS sound expansion (mapper 20) ---
 			if (0x4040 <= addr && addr < 0x4090) 
 			{
-				if (debuginfo[MAPPER] == 20 || (nsfHeader.ExtraChipSelect & FDS_AUDIO || debuginfo[MAPPER] == 256))
+				if (debuginfo[MAPPER] == 20 || debuginfo[MAPPER] == 256)
 				{
 					send = true;
 				}
@@ -76,7 +76,7 @@ void writeAPU(u32 val, u32 addr)
 			// --- MMC5 sound expansion (mapper 05) ---
 			if (addr >= 0x5000 && addr <= 0x5015)
 			{
-                if (debuginfo[MAPPER] == 5 || (nsfHeader.ExtraChipSelect & MMC5_AUDIO))
+                if (debuginfo[MAPPER] == 5)
 				{
                     send = true;
                 }
