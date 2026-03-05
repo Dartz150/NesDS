@@ -142,7 +142,8 @@ static void n163UpdateChannelStatus(int ch_idx, Uint32 nes_apu_clock, Uint32 ds_
     }
 }
 
-void __fastcall n163SoundWrite(Uint address, Uint value) {
+void __fastcall n163SoundWrite(Uint address, Uint value)
+{
     address &= 0x7F;
     if (n163s.ram[address] == value)
     {
@@ -191,6 +192,8 @@ void __fastcall n163SoundWrite(Uint address, Uint value) {
 
 void n163SoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
+    if (!has_n163) return;
+
     if (n163s.dirty_channels == 0)
     {
         return;
