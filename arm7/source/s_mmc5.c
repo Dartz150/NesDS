@@ -197,9 +197,32 @@ void mmc5SoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
     if (!has_mmc5) return;
 
-    mmc5SoundSquareUpdateHw(0, DS_MMC5_SQUARE_1_CH, 72, nes_apu_clock);
-    mmc5SoundSquareUpdateHw(1, DS_MMC5_SQUARE_2_CH, 56, nes_apu_clock);
-    mmc5SoundPcmUpdateHw(&mmc5s.pcm, DS_MMC5_PCM_CH, 64);
+    // Panning
+    u32 mmc5_pu1_pan, mmc5_pu2_pan, mmc5_pcm_pan;
+    if (apu_cfg.stereo)
+    {
+        mmc5_pu1_pan = 72;
+        mmc5_pu2_pan = 56;
+        mmc5_pcm_pan = 64;
+    }
+    else
+    {
+        mmc5_pu1_pan = 64;
+        mmc5_pu2_pan = 64;
+        mmc5_pcm_pan = 64;
+    }
+
+    (apu_cfg.mmc5_p1)
+    ? snd_stopChannel(DS_MMC5_SQUARE_1_CH)
+    : mmc5SoundSquareUpdateHw(0, DS_MMC5_SQUARE_1_CH, mmc5_pu1_pan, nes_apu_clock);
+    
+    (apu_cfg.mmc5_p2)
+    ? snd_stopChannel(DS_MMC5_SQUARE_2_CH)
+    : mmc5SoundSquareUpdateHw(1, DS_MMC5_SQUARE_2_CH, mmc5_pu2_pan, nes_apu_clock);
+
+    (apu_cfg.mmc5_pcm)
+    ? snd_stopChannel(DS_MMC5_PCM_CH)
+    : mmc5SoundPcmUpdateHw(&mmc5s.pcm, DS_MMC5_PCM_CH, mmc5_pcm_pan);
 }
 
 void mmc5SoundWrite(Uint address, Uint value)

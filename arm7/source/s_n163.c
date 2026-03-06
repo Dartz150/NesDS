@@ -194,6 +194,12 @@ void n163SoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
     if (!has_n163) return;
 
+    if (apu_cfg.n163) // Only allow the mute toggle if we're running a n163 game
+    {
+        n163SoundHwStop();
+        return;
+    }
+
     if (n163s.dirty_channels == 0)
     {
         return;

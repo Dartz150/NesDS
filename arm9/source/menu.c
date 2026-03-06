@@ -258,8 +258,6 @@ struct menu_unit menu_game = {
 	.item = menu_game_items,
 };
 
-
-
 struct menu_unit menu_cheat_search = {
 	.top = "Search",
 	.subcnt = 0,
@@ -430,19 +428,6 @@ struct menu_item menu_config_items[] = {
 		.x = 21, .y = 5, .w = 6, .h = 3,
 		.func = menu_config_func,
 	},
-	// // Gfx Screen
-	// {
-	// 	.name = "\r Top",
-	// 	.type = 1,
-	// 	.x = 13, .y = 10, .w = 6, .h = 3,
-	// 	.func = menu_config_func,
-	// },
-	// {
-	// 	.name = "\r Sub",
-	// 	.type = 1,
-	// 	.x = 21, .y = 10, .w = 6, .h = 3,
-	// 	.func = menu_config_func,
-	// },
 	// Save dir
 	{
 		.name = "\r Sub",
@@ -501,30 +486,30 @@ struct menu_item menu_s_apu_items[] =
 
 struct menu_item menu_s_exp_items[] =
 {
-	{	// VRC6 Pulse 1
+	{	// Slot 0
 		.name = "",
 		.type = 1,
 		.x = 16, .y = 7, .w = 2, .h = 1,
 		.func = menu_s_exp_br,
 	},
-	{	// VRC6 Pulse 2
+	{	// Slot 1
 		.name = "",
 		.type = 1,
 		.x = 16, .y = 10, .w = 2, .h = 1,
 		.func = menu_s_exp_br,
 	},
-	{   // VRC6 Saw
+	{   // Slot 2
 		.name = "",
 		.type = 1,
 		.x = 16, .y = 13, .w = 2, .h = 1,
 		.func = menu_s_exp_br,
 	},
-	{	// FDS
-		.name = "",
-		.type = 1,
-		.x = 16, .y = 16, .w = 2, .h = 1,
-		.func = menu_s_exp_br,
-	},
+	// {	// Slot 3 (Uncomment when necessasry)
+	// 	.name = "",
+	// 	.type = 1,
+	// 	.x = 16, .y = 16, .w = 2, .h = 1,
+	// 	.func = menu_s_exp_br,
+	// },
 };
 
 struct menu_unit menu_s_apu =
@@ -538,10 +523,29 @@ struct menu_unit menu_s_apu =
 struct menu_unit menu_s_exp =
 {
 	.top = "Exp.",
-	.subcnt = 4,
+	.subcnt = 0,
 	.start = menu_s_exp_start,
 	.item = menu_s_exp_items,
 };
+
+// Set button count dinamically based on the sound expansion detected
+void menu_s_exp_count()
+{
+    u8 mapper = debuginfo[MAPPER];
+
+    if (mapper == 24 || mapper == 26 || mapper == 5 || mapper == 69)
+	{
+        menu_s_exp.subcnt = 3; // VRC6, MMC5, SS5B have 3 channels
+    } 
+    else if (mapper == 20 || mapper == 19 || mapper == 85)
+	{
+        menu_s_exp.subcnt = 1; // FDS, N163, VRC7 have 1 channel
+    } 
+    else
+	{
+        menu_s_exp.subcnt = 0; // No expansion detected
+    }
+}
 
 struct menu_item menu_sound_items[] = 
 {
@@ -551,7 +555,7 @@ struct menu_item menu_sound_items[] =
         .x = 1, .y = 5, .w = 8, .h = 2,
         .func = menu_sound_br
     },
-	{	// Pulse Render Mode
+	{	// Render Mode (TODO: Remove)
         .name = " Render",
         .type = 1,
         .x = 1, .y = 10, .w = 8, .h = 2,
@@ -570,7 +574,7 @@ struct menu_item menu_sound_items[] =
         .child = &menu_s_apu,
     },
 	{   // Expansion Sound Toggles
-        .name = "Expansion\rChannels",
+        .name = "  EXP\rChannels",
         .type = 0,
         .x = 11, .y = 17, .w = 8, .h = 2,
         .child = &menu_s_exp,
@@ -934,12 +938,13 @@ void do_menu()
 
 			width = 0;
 
-			for (i = 0; i < last_menu->subcnt; i++) {
-				add_buttonp(1, (struct button *)&(last_menu->item[i]));
-			}
-
+			// Ensure we get the new button count before we add any
 			if(last_menu->start) {
 				last_menu->start();
+			}
+
+			for (i = 0; i < last_menu->subcnt; i++) {
+				add_buttonp(1, (struct button *)&(last_menu->item[i]));
 			}
 
 			show_button_group(0);

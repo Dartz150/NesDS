@@ -26,18 +26,25 @@ typedef struct
     bool stereo;
 
 	// Sound Ch. mute flags
-    bool pu1raw;
-    bool pu2raw;
-	bool triraw;
 	bool pu1;
     bool pu2;
     bool noi;
 	bool tri;
     bool dmc;
+
+    // Expansion Ch. Mute Flags
     bool fds;
     bool vrc_p1;
     bool vrc_p2;
     bool vrc_saw;
+    bool mmc5_p1;
+    bool mmc5_p2;
+    bool mmc5_pcm;
+    bool ss5b_p1;
+    bool ss5b_p2;
+    bool ss5b_p3;
+    bool n163;
+    bool vrc7;
 } ApuConfig;
 
 void apuSoundWrite(Uint address, Uint value);

@@ -2,13 +2,6 @@
 #include "c_defs.h"
 #include "NesMachine.h"
 
-#define TOP_SCREEN_BRIGHT_ON       (REG_MASTER_BRIGHT = 0x8000 | 0)
-#define TOP_SCREEN_BRIGHT_OFF      (REG_MASTER_BRIGHT = 0x8000 | 16)
-#define SUB_SCREEN_BRIGHT_ON       (REG_MASTER_BRIGHT_SUB = 0x8000 | 0)
-#define SUB_SCREEN_BRIGHT_OFF  	   (REG_MASTER_BRIGHT_SUB = 0x8000 | 16)
-
-#define TOP_SCREEN_BRIGHT_DIM       (REG_MASTER_BRIGHT = 0x8000 | 8)
-
 extern u16 font;
 extern u16 fontpal;
 const char cusfont[] = {
@@ -89,7 +82,7 @@ void showconsole() {
 	powerOn(POWER_2D_B);
 	powerOn(PM_BACKLIGHT_BOTTOM | PM_BACKLIGHT_TOP);
 	SUB_SCREEN_BRIGHT_ON;
-	TOP_SCREEN_BRIGHT_DIM;
+	//TOP_SCREEN_BRIGHT_DIM;
 	lcdMainOnTop();
 	screen_swap = 0;
 	REG_DISPCNT_SUB = MODE_0_2D|DISPLAY_BG0_ACTIVE|DISPLAY_BG1_ACTIVE|DISPLAY_WIN0_ON;

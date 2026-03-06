@@ -109,10 +109,33 @@ void ss5bSoundHwUpdate(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
     if (!has_ss5b) return;
 
+    // Panning
+    u32 s5b_pu1_pan, s5b_pu2_pan, s5b_pu3_pan;
+    if (apu_cfg.stereo)
+    {
+        s5b_pu1_pan = 48;
+        s5b_pu2_pan = 80;
+        s5b_pu3_pan = 64;
+    }
+    else
+    {
+        s5b_pu1_pan = 64;
+        s5b_pu2_pan = 64;
+        s5b_pu3_pan = 64;
+    }
+
     // The Sunsoft 5B is loud, we spread the panning slightly.
-    ss5bSoundSquareUpdateHw(0, DS_SS5B_SQ1_CH, 48, nes_apu_clock);
-    ss5bSoundSquareUpdateHw(1, DS_SS5B_SQ2_CH, 80, nes_apu_clock);
-    ss5bSoundSquareUpdateHw(2, DS_SS5B_SQ3_CH, 64, nes_apu_clock);
+    (apu_cfg.ss5b_p1)
+    ? snd_stopChannel(DS_SS5B_SQ1_CH)
+    : ss5bSoundSquareUpdateHw(0, DS_SS5B_SQ1_CH, s5b_pu1_pan, nes_apu_clock);
+    
+    (apu_cfg.ss5b_p2)
+    ? snd_stopChannel(DS_SS5B_SQ2_CH)
+    : ss5bSoundSquareUpdateHw(1, DS_SS5B_SQ2_CH, s5b_pu2_pan, nes_apu_clock);
+
+    (apu_cfg.ss5b_p3)
+    ? snd_stopChannel(DS_SS5B_SQ3_CH)
+    : ss5bSoundSquareUpdateHw(2, DS_SS5B_SQ3_CH, s5b_pu3_pan, nes_apu_clock);
 }
 
 void ss5bSoundHwStop()

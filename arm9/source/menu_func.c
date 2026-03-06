@@ -661,19 +661,38 @@ void menu_s_apu_br(void)
 
 void menu_s_exp_br(void)
 {
-    switch (lastbutton_cnt)
+    u8 mapper = debuginfo[MAPPER];
+
+    switch (mapper)
     {
-		case 0: // VRC6 Pulse 1
-            __apu_flags ^= APU_STAT_MUTE_VRC_P1;
+        case 24: case 26: // VRC6
+            if (lastbutton_cnt == 0) __apu_flags ^= APU_STAT_MUTE_VRC_P1;
+            if (lastbutton_cnt == 1) __apu_flags ^= APU_STAT_MUTE_VRC_P2;
+            if (lastbutton_cnt == 2) __apu_flags ^= APU_STAT_MUTE_VRC_SAW;
             break;
-        case 1: // VRC6 Pulse 2
-            __apu_flags ^= APU_STAT_MUTE_VRC_P2;
+
+        case 5: // MMC5
+            if (lastbutton_cnt == 0) __apu_flags ^= APU_STAT_MUTE_MMC5_P1;
+            if (lastbutton_cnt == 1) __apu_flags ^= APU_STAT_MUTE_MMC5_P2;
+            if (lastbutton_cnt == 2) __apu_flags ^= APU_STAT_MUTE_MMC5_PCM;
             break;
-        case 2: // VRC6 Saw
-            __apu_flags ^= APU_STAT_MUTE_VRC_SAW;
+
+        case 69: // Sunsoft 5B (SS5B)
+            if (lastbutton_cnt == 0) __apu_flags ^= APU_STAT_MUTE_SS5B_P1;
+            if (lastbutton_cnt == 1) __apu_flags ^= APU_STAT_MUTE_SS5B_P2;
+            if (lastbutton_cnt == 2) __apu_flags ^= APU_STAT_MUTE_SS5B_P3;
             break;
-        case 3: // FDS
-            __apu_flags ^= APU_STAT_MUTE_FDS;
+
+        case 19: // Namco 163
+            if (lastbutton_cnt == 0) __apu_flags ^= APU_STAT_MUTE_N163;
+            break;
+
+        case 20: // FDS
+            if (lastbutton_cnt == 0) __apu_flags ^= APU_STAT_MUTE_FDS;
+            break;
+
+        case 85: // VRC7
+            if (lastbutton_cnt == 0) __apu_flags ^= APU_STAT_MUTE_VRC7;
             break;
     } 
     // Sync with ARM7
@@ -682,96 +701,104 @@ void menu_s_exp_br(void)
     menu_draw = 0;
 }
 
-// TODO: Refactor everything in this code with cases, 
-// lastbutton_cnt only needs to match a consecutive integer...
 void menu_emu_br(void)
 {
-	if(lastbutton_cnt > 0 && lastbutton_cnt <= 6) {
-		if(lastbutton_cnt <= 3) {
-			__emuflags &= ~3;
-			switch (lastbutton_cnt) {
-				case 1:
-					__emuflags |= 3; // alpha lerp
-					break;
-				case 2:
-					break;
-				case 3:
-					__emuflags |= 1; // noflicker
-					break;
-			}
-			rescale(ad_scale,ad_ypos);
-		}
-		else {
-			int type = lastbutton_cnt - 4;
-			int i;
-			__emuflags &= ~(3 << 6);
-			__emuflags += type << 6;
+    // Indexed categories from menu_emulation_items
+    enum
+	{
+        BTN_ALPHA_LERP = 0,
+		BTN_FILTER_OFF,
+        BTN_FLICKER,
+        BTN_RENDER_FRAME,
+        BTN_RENDER_TILE,
+        BTN_RENDER_SOFT,
+        BTN_FSKIP_INC,
+        BTN_FSKIP_DEC,
+        BTN_PALETTE_SYNC,
+        BTN_REGION_NTSC,
+        BTN_REGION_PAL
+    };
 
-			switch(type) {
-			case 0:	
-				{
-					videoSetMode(MODE_0_2D);
-					videoBgDisable(3);
-					for (i = 0; i < 4*8/4; i++) {
-						agb_bg_map[i] = -1;
-					}
-				}
-				break;
-			case 1: // sp-perline
-				{
-					videoSetMode(MODE_0_2D);
-					videoBgDisable(3);
-					for (i = 0; i < 4*8/4; i++) {
-						agb_bg_map[i] = -1;
-					}
-				}
-				break;
-			case 2: // pure-soft
-				{
-					videoSetMode(MODE_5_2D);
-					videoBgEnable(3);
-					BGCTRL[3] = (typeof(BGCTRL_SUB[3]))(BgSize_B8_256x256 | BG_MAP_BASE(0) | BG_TILE_BASE(0));	//This is weird....
-					//bgInit(3, BgType_Bmp8, BgSize_B8_256x256, 0,0);
-					REG_BG3PA = 256;
-					REG_BG3PB = 0;
-					REG_BG3PC = 0;
-					REG_BG3PD = 512 - (ad_scale >> 8);
-					swiWaitForVBlank();
-					videoSetMode(MODE_5_2D);
-					videoBgEnable(3);
-					BGCTRL[3] = (typeof(BGCTRL_SUB[3]))(BgSize_B8_256x256  | BG_MAP_BASE(0) | BG_TILE_BASE(0));
-					REG_BG3PA = 256;
-					REG_BG3PB = 0;
-					REG_BG3PC = 0;
-					REG_BG3PD = 512 - (ad_scale >> 8);
-				}
-				break;
-			}
+    // --- SCALING FILTERS ---
+    if (lastbutton_cnt >= BTN_ALPHA_LERP && lastbutton_cnt <= BTN_FLICKER)
+	{
+        __emuflags &= ~3; 
+        if (lastbutton_cnt == BTN_ALPHA_LERP)
+		{
+			__emuflags |= 3;
 		}
-		//consoletext(64*12 + 4, "Blend Type:", 0);
-		consoletext(64*9 + 4, blendnames[__emuflags&3], 0x1000);
-		//consoletext(64*19 + 4, "Render Type:", 0);
-		consoletext(64*17 + 3, rendernames[(__emuflags >> 6)&3], 0x1000);
-	} else if(lastbutton_cnt < 9) {
-		if(lastbutton_cnt & 1) {
-			if(soft_frameskip > 1)
-				soft_frameskip--;
+        if (lastbutton_cnt == BTN_FLICKER)
+		{
+			__emuflags |= 1; // Flicker = 1
 		}
-		else {
-			if (soft_frameskip < 0xf)
+        // BTN_FILTER_OFF is 0
+        
+        rescale(ad_scale, ad_ypos);
+        consoletext(64 * 9 + 4, blendnames[__emuflags & 3], 0x1000);
+    }
+
+    // --- RENDER TYPE ---
+    else if (lastbutton_cnt >= BTN_RENDER_FRAME && lastbutton_cnt <= BTN_RENDER_SOFT)
+	{
+        int render_type = lastbutton_cnt - BTN_RENDER_FRAME; 
+        int i;
+
+        __emuflags &= ~(3 << 6);
+        __emuflags |= (render_type << 6);
+
+        if (render_type == 2)
+		{ // Software Render
+            videoSetMode(MODE_5_2D);
+            videoBgEnable(3);
+            BGCTRL[3] = (typeof(BGCTRL_SUB[3]))(BgSize_B8_256x256 | BG_MAP_BASE(0) | BG_TILE_BASE(0));
+            //bgInit(3, BgType_Bmp8, BgSize_B8_256x256, 0,0);
+			REG_BG3PA = 256; 
+			REG_BG3PB = 0; 
+			REG_BG3PC = 0;
+            REG_BG3PD = 512 - (ad_scale >> 8);
+			swiWaitForVBlank();
+        }
+		else
+		{ // Hardware (Frame or Tile)
+            videoSetMode(MODE_0_2D);
+            videoBgDisable(3);
+            for (i = 0; i < 8; i++) agb_bg_map[i] = -1;
+        }
+        consoletext(64 * 17 + 3, rendernames[(__emuflags >> 6) & 3], 0x1000);
+    }
+
+    // --- FRAMESKIP ---
+    else if (lastbutton_cnt == BTN_FSKIP_INC || lastbutton_cnt == BTN_FSKIP_DEC)
+	{
+        if (lastbutton_cnt == BTN_FSKIP_INC)
+		{
+            if (soft_frameskip < 0xf)
+			{
 				soft_frameskip++;
-		}
-		hex8(64*22 + 26, soft_frameskip - 1);
-	}
-	else if (lastbutton_cnt == 9) {
-		__emuflags ^= PALSYNC;
-		if (__emuflags & (SOFTRENDER | PALTIMING))
+			}
+        }
+		else
+		{
+            if (soft_frameskip > 1)
+			{
+				soft_frameskip--;
+			}
+        }
+        dec10(64 * 22 + 26, soft_frameskip - 1);
+    }
+
+    // --- PALETTE SYNC ---
+    else if (lastbutton_cnt == BTN_PALETTE_SYNC)
+	{
+        __emuflags ^= PALSYNC;
+        if (__emuflags & (SOFTRENDER | PALTIMING))
+		{
 			__emuflags &= ~PALSYNC;
-		consoletext(64*6 + 38, __emuflags&PALSYNC ? "\r    On  " : "\r    Off", 0x1000);
-	}	
+		}
+        consoletext(64 * 6 + 38, __emuflags & PALSYNC ? "\r    On  " : "\r    Off", 0x1000);
+    }
 	menu_stat = 3;
 }
-
 
 void brightset(void) {
 	paletteinit();
@@ -1324,20 +1351,67 @@ void menu_s_apu_start(void)
 
 void menu_s_exp_start(void)
 {
-	// Title
-	consoletext(64*4 + 2, "<NES Expansion Sound Channels>", 0);
-    // VRC6 Pulse 1
-    consoletext(64*8 + 2, "<VRC6 Pulse 1>", 0);
-    consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_VRC_P1) ? "" : "*", 0x1000);
-	// VRC6 Pulse2
-    consoletext(64*11 + 2, "<VRC6 Pulse 2>", 0);
-	consoletext(64*11 + 34, (__apu_flags & APU_STAT_MUTE_VRC_P2) ? "" : "*", 0x1000);
-	// VRC6 Saw
-	consoletext(64*14 + 2, "<VRC6 Saw>", 0);
-    consoletext(64*14 + 34, (__apu_flags & APU_STAT_MUTE_VRC_SAW) ? "" : "*", 0x1000);
-	// FDS Sound
-	consoletext(64*17 + 2, "<FDS>", 0);
-    consoletext(64*17 + 34, (__apu_flags & APU_STAT_MUTE_FDS) ? "" : "*", 0x1000);
+	menu_s_exp_count();
+    u8 mapper = debuginfo[MAPPER];
+
+    if (mapper == 24 || mapper == 26) { // VRC6
+		consoletext(64*4 + 2, "<Konami VRC6 Sound Channels>", 0);
+		
+        consoletext(64*8 + 2,  "<VRC6 Pulse 1>", 0);
+        consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_VRC_P1) ? "" : "*", 0x1000);
+        
+        consoletext(64*11 + 2, "<VRC6 Pulse 2>", 0);
+        consoletext(64*11 + 34, (__apu_flags & APU_STAT_MUTE_VRC_P2) ? "" : "*", 0x1000);
+        
+        consoletext(64*14 + 2, "<VRC6 Saw>", 0);
+        consoletext(64*14 + 34, (__apu_flags & APU_STAT_MUTE_VRC_SAW) ? "" : "*", 0x1000);
+    } 
+    else if (mapper == 20) { // FDS
+		consoletext(64*4 + 2, "<Famicom Disk Sound Channels>", 0);
+
+        consoletext(64*8 + 2,  "<FDS Sound>", 0);
+        consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_FDS) ? "" : "*", 0x1000);
+    }
+    else if (mapper == 5) { // MMC5
+		consoletext(64*4 + 2, "<Nintendo MMC5 Sound Channels>", 0);
+
+        consoletext(64*8 + 2,  "<MMC5 Pulse 1>", 0);
+        consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_MMC5_P1) ? "" : "*", 0x1000);
+        
+        consoletext(64*11 + 2, "<MMC5 Pulse 2>", 0);
+        consoletext(64*11 + 34, (__apu_flags & APU_STAT_MUTE_MMC5_P2) ? "" : "*", 0x1000);
+        
+        consoletext(64*14 + 2, "<MMC5 PCM>", 0);
+        consoletext(64*14 + 34, (__apu_flags & APU_STAT_MUTE_MMC5_PCM) ? "" : "*", 0x1000);
+    }
+	else if (mapper == 69) { // SS5B
+		consoletext(64*4 + 2, "<Sunsoft 5B Sound Channels>", 0);
+
+        consoletext(64*8 + 2,  "<SS5B Pulse 1>", 0);
+        consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_SS5B_P1) ? "" : "*", 0x1000);
+        
+        consoletext(64*11 + 2, "<SS5B Pulse 2>", 0);
+        consoletext(64*11 + 34, (__apu_flags & APU_STAT_MUTE_SS5B_P2) ? "" : "*", 0x1000);
+        
+        consoletext(64*14 + 2, "<SS5B Pulse 3>", 0);
+        consoletext(64*14 + 34, (__apu_flags & APU_STAT_MUTE_SS5B_P3) ? "" : "*", 0x1000);
+    }
+    else if (mapper == 19) { // N163
+		consoletext(64*4 + 2, "<Namcot 163 Sound Channels>", 0);
+
+        consoletext(64*8 + 2,  "<Namco 163>", 0);
+        consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_N163) ? "" : "*", 0x1000);
+    }
+	else if (mapper == 85) { // VRC7
+		consoletext(64*4 + 2, "<Konami VRC7 Sound Channels>", 0);
+
+        consoletext(64*8 + 2,  "<YM2413 VRC7>", 0);
+        consoletext(64*8 + 34, (__apu_flags & APU_STAT_MUTE_VRC7) ? "" : "*", 0x1000);
+    }
+    else {
+		consoletext(64*4 + 2, "<No Expansion Chip Detected>", 0);
+    }
+	swiWaitForVBlank();
 }
 
 void menu_config_func(void)

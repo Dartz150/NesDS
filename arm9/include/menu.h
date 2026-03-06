@@ -121,6 +121,7 @@ void show_all_pixel(void);
 void menu_sound_start(void);
 void menu_s_apu_start(void);
 void menu_s_exp_start(void);
+void menu_s_exp_count();
 void menu_sound_br(void);
 void menu_s_apu_br(void);
 void menu_s_exp_br(void);

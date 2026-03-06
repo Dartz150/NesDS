@@ -70,6 +70,8 @@ void do_gesture(void)
 	if(gesture_type == 0 && touchstate == 2) {
 		memset((void *)(SUB_BG),0,64*24);
 		powerOn(PM_BACKLIGHT_BOTTOM | PM_BACKLIGHT_TOP);
+		SUB_SCREEN_BRIGHT_ON;
+		TOP_SCREEN_BRIGHT_ON;
 		consoletext(64 * 4 + 16, "Gesture Motions:", 0);
 		gesture_type = 1;
 		gesture_x = last_x;

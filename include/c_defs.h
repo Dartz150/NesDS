@@ -39,17 +39,11 @@
 #define KEY_TOUCH 0x1000
 #define KEY_CLOSED 0x2000
 
-// #define FIFO_WRITEPM 		1
-// #define FIFO_APU_PAUSE 		2
-// #define FIFO_UNPAUSE 		3
-// #define FIFO_APU_RESET 		4
-// #define FIFO_SOUND_RESET 	5
-// #define FIFO_APU_PAL 	 	6
-// #define FIFO_APU_NTSC     	7
-// #define FIFO_APU_SWAP 		8
-// #define FIFO_APU_NORM 		9
-// #define FIFO_SOUND_UPDATE	10
-// #define FIFO_AUDIO_FILTER 	11
+#define TOP_SCREEN_BRIGHT_ON       (REG_MASTER_BRIGHT = 0x8000 | 0)
+#define TOP_SCREEN_BRIGHT_OFF      (REG_MASTER_BRIGHT = 0x8000 | 16)
+#define SUB_SCREEN_BRIGHT_ON       (REG_MASTER_BRIGHT_SUB = 0x8000 | 0)
+#define SUB_SCREEN_BRIGHT_OFF  	   (REG_MASTER_BRIGHT_SUB = 0x8000 | 16)
+#define TOP_SCREEN_BRIGHT_DIM      (REG_MASTER_BRIGHT = 0x8000 | 8)
 
 #ifdef ARM9
 

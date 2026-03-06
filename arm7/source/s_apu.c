@@ -737,15 +737,15 @@ __inline void nesApuSoundHwRender(int sample_count, uint32_t nes_apu_clock)
     }
 
 	// Check if the APU flags have any of the channels muted
-    (apu_cfg.pu1raw)
+    (apu_cfg.pu1)
         ? snd_stopChannel(DS_APU_SQUARE_1_CH)
         : nesApuSoundPulseUpdateHw(&apu.square[0], DS_APU_SQUARE_1_CH, apu.square[0].pan, nes_apu_clock);
 
-    (apu_cfg.pu2raw)
+    (apu_cfg.pu2)
         ? snd_stopChannel(DS_APU_SQUARE_2_CH)
         : nesApuSoundPulseUpdateHw(&apu.square[1], DS_APU_SQUARE_2_CH, apu.square[1].pan, nes_apu_clock);
 
-    (apu_cfg.triraw)
+    (apu_cfg.tri)
         ? snd_stopChannel(DS_APU_TRIANGLE_CH)
         : nesApuSoundTriangleUpdateHw(&apu.triangle, DS_APU_TRIANGLE_CH, DS_TRIANGLE_PAN_CH, nes_apu_clock);
 

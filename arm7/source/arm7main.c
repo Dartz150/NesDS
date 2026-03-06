@@ -43,8 +43,8 @@ static int APU_paused;
 
 void setApuRegion()
 {
-	// VRC6/FDS/MMC5 titles are always NTSC
-	if (has_vrc6 || has_fds || has_mmc5)
+	// Titles with sound expansions are always NTSC
+	if (has_vrc6 || has_fds || has_mmc5 || has_ss5b || has_n163 || has_vrc7)
 	{
 		nes_apu_clock = NES_APU_NTSC;
 	}
@@ -96,8 +96,8 @@ void __fastcall soundMain()
 	for (int i = 0; i < MIXBUFSIZE; i++)
 	{
 		int32_t mixed = 0;
-		if (has_vrc7) mixed += (int32_t)vrc7SoundRender();
-		if (has_fds) mixed += (int32_t)FDSSoundRender() << 1;
+		if (has_vrc7 && !apu_cfg.vrc7) mixed += (int32_t)vrc7SoundRender();
+		if (has_fds && !apu_cfg.fds) mixed += (int32_t)FDSSoundRender() << 1;
 
 		buffer_L[buff_write_cursor] = mixed;
 		buffer_R[buff_write_cursor] = buffer_L[buff_write_cursor];
