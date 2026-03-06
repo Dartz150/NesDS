@@ -14,7 +14,9 @@ mapper85init:
 	.word write85,write85,write85,write85
 	b Konami_Init
 VRC7:
-	bx lr
+	tst addy,#0x20          ;@ $9010 (A5=0) || $9030 (A5=1)
+    beq vrc7_write_addr     ;@ Call hooks in misc.c
+    b vrc7_write_data
 ;@----------------------------------------------------------------------------
 write85:
 ;@----------------------------------------------------------------------------

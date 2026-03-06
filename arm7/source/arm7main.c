@@ -10,6 +10,7 @@
 #include "s_mmc5.h"
 #include "s_ss5b.h"
 #include "s_n163.h"
+#include "s_vrc7.h"
 
 // Information sources:
 // - https://www.nesdev.org/wiki/APU_Mixer
@@ -92,7 +93,6 @@ void __fastcall soundMain()
 
     // Render a NES Sound frame. Generates the deltas/samples for every APU channel.
     nesApuProcessChannels(MIXBUFSIZE, nes_apu_clock, ds_sound_freq);
-
 	// blip_buf already converts deltas to centered PCM16 samples, prefect for the DS
 	// Reading ensures blip_buf internal avail stays in sync with the timers.
     int read = blip_read_samples(master_blip, temp_buf, MIXBUFSIZE, 0);
@@ -104,26 +104,16 @@ void __fastcall soundMain()
         memset(temp_buf + read, 0, (MIXBUFSIZE - read) * sizeof(s16));
     }
 
-	// Add Sound Expansion samples if enabled
-    if (has_fds && !apu_cfg.fds)
+	for (int i = 0; i < MIXBUFSIZE; i++)
 	{
-        for (int i = 0; i < MIXBUFSIZE; i++)
-		{
-			// Get FDS samples from the render
-            int32_t fds_sample = FDSSoundRender();
-			// Apply gain consistent with the nes APU
-            temp_buf[i] = clampSample16((int32_t)temp_buf[i] + (fds_sample << 1));
-        }
-    }
+		int32_t mixed = 0;
+		if (has_vrc7) mixed += (int32_t)vrc7SoundRender();
+		if (has_fds) mixed += (int32_t)FDSSoundRender() << 1;
 
-	// The Sound hardware is now independently looping through buffer_L/R
-    for (int i = 0; i < MIXBUFSIZE; i++)
-	{
-        buffer_L[buff_write_cursor] = temp_buf[i];
-        buffer_R[buff_write_cursor] = temp_buf[i]; // Stereo copy TODO: Add pseudo-stereo effect back
-        buff_write_cursor = (buff_write_cursor + 1) & RING_MASK;
-    }
-
+		buffer_L[buff_write_cursor] = mixed;
+		buffer_R[buff_write_cursor] = buffer_L[buff_write_cursor];
+		buff_write_cursor = (buff_write_cursor + 1) & RING_MASK;
+	}
     readApu();
     APU4015Reg();
 }
@@ -215,10 +205,17 @@ void resetApu()
 	has_mmc5 = (mapper == 5  || mapper == 256);
 	has_ss5b = (mapper == 69 || mapper == 256);
 	has_n163 = (mapper == 19);
+	has_vrc7 = (mapper == 85);
 
 	clearSoundBuffers();
 	setApuRegion();
 	apuSoundInit(nes_apu_clock, ds_sound_freq);
+
+	if (has_vrc7)
+	{
+		vrc7SoundInit();
+	}
+
 	if (has_vrc6)
 	{
 		vrc6SoundInit();

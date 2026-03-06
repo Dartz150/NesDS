@@ -9,6 +9,7 @@
 #include "s_mmc5.h"
 #include "s_ss5b.h"
 #include "s_n163.h"
+#include "s_vrc7.h"
 #include "s_apu_defs.h"
 #include "soundChannel.h"
 
@@ -1330,6 +1331,11 @@ void apuSoundWrite(Uint address, Uint value)
     else if (has_n163 && address >= 0xF800 && address <= 0xF87F)
     {
         n163SoundWrite(address & 0x7F, value);
+    }
+    // KONAMI VRC7 SOUND EXPANSION
+    else if (has_vrc7 && (address & 0xFF80) == 0x9000)
+    {
+        vrc7SoundWrite(address, value);
     }
 	// VRC6 (KONAMI SOUND CHIP)
 	else if (has_vrc6 && address >= VRC6_MIN_BASE)

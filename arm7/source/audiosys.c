@@ -14,6 +14,7 @@ bool has_vrc6;
 bool has_fds;
 bool has_ss5b;
 bool has_n163;
+bool has_vrc7;
 
 // ARM7 side APU status flags
 u32 apu_internal_state;

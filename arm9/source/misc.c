@@ -9,6 +9,11 @@
 #include "menu.h"
 #include "NesMachine.h"
 
+typedef struct
+{
+    u8 address; // Last $9010 value
+} VRC7_ARM9_STATE;
+
 int save_slots = 0;
 int slots_num = 0;
 bool use_saves_dir = false;
@@ -100,7 +105,14 @@ void writeAPU(u32 val, u32 addr)
 				}
 			}
 
-			// TODO: Implement VRC7 sound expansion
+			// --- VRC7 sound expansion (Mapper 85) ---
+			if (addr >= 0x9000 && addr <= 0x907F)
+			{
+				if (debuginfo[MAPPER] == 85) 
+				{
+					send = true;
+				}
+			}
 
 			if (send) 
 			{
@@ -110,6 +122,19 @@ void writeAPU(u32 val, u32 addr)
 			}
 		}
 	}
+}
+
+// C hooks to send the VRC7 sound registers to the ARM7
+static VRC7_ARM9_STATE vrc7_a9;
+
+void vrc7_write_addr(u8 val)
+{
+    vrc7_a9.address = val;
+}
+
+void vrc7_write_data(u8 val)
+{
+    writeAPU(val, 0x9000 | vrc7_a9.address);
 }
 
 /*****************************
