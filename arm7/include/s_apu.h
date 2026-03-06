@@ -8,6 +8,7 @@ extern "C" {
 void APU4015Reg(void);
 void apuSoundWrite(Uint address, Uint value);
 void apuSoundInit(Uint32 nes_apu_clock, Uint32 ds_sound_freq);
+void nesApuSoundHwRender(int sample_count, uint32_t nes_apu_clock);
 
 // Hardware renderers
 // PSG channel writes change the sound INSTANTLY. 

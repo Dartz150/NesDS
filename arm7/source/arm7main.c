@@ -29,23 +29,17 @@
 #define L_PAN             SOUND_PAN(127)
 
 // DS Mixer buffers
-#define RING_BUF_SIZE (MIXBUFSIZE << 3) // Buffer needs to be at least 1024 for stability
+#define RING_BUF_SIZE (MIXBUFSIZE << 2)
 #define RING_MASK (RING_BUF_SIZE - 1)
 
 static s16 buffer_L[RING_BUF_SIZE] ALIGN(32);
 static s16 buffer_R[RING_BUF_SIZE] ALIGN(32);
-static s16 temp_buf[MIXBUFSIZE] ALIGN(32); // Intermediate buffer to hold processed samples
-static int buff_write_cursor;
+static int buff_write_cursor = 0;
 
 // Sound status flags
 static uint32_t nes_apu_clock;
-static uint32_t ds_sound_freq;
+static const uint32_t ds_sound_freq = DS_SOUND_FREQUENCY;
 static int APU_paused;
-
-void setDsSoundFreq()
-{
-	ds_sound_freq = DS_SOUND_FREQUENCY;
-}
 
 void setApuRegion()
 {
@@ -76,7 +70,7 @@ __inline static int16_t clampSample16(int32_t inSample)
 __fastcall void readApu()
 {
 	int max_cmds = 32; // Security limit
-    while(fifoCheckValue32(FIFO_USER_07) && max_cmds--) 
+    while(fifoCheckValue32(FIFO_USER_07) && max_cmds--)
 	{
         u32 msg = fifoGetValue32(FIFO_USER_07);
         apuSoundWrite(msg >> 8, msg & 0xFF);
@@ -85,24 +79,19 @@ __fastcall void readApu()
 }
 
 // Main audio loop.
-// By using a Ring Buffer, we prevent sound saturation and audio 
-// corruption caused by a clock drift.
 void __fastcall soundMain()
 {
     if (APU_paused) return;
 
-    // Render a NES Sound frame. Generates the deltas/samples for every APU channel.
+    // Render a NES Sound frame. Clocks the NES APU relative to the DS sample rate.
     nesApuProcessChannels(MIXBUFSIZE, nes_apu_clock, ds_sound_freq);
-	// blip_buf already converts deltas to centered PCM16 samples, prefect for the DS
-	// Reading ensures blip_buf internal avail stays in sync with the timers.
-    int read = blip_read_samples(master_blip, temp_buf, MIXBUFSIZE, 0);
-	ptr_mixed = 0; // Always reset read pointer
+	nesApuSoundHwRender(MIXBUFSIZE, nes_apu_clock);
 
-	// Fill with silence if blip_buf underflows to avoid playing old buffer data
-    if (read < MIXBUFSIZE)
-	{
-        memset(temp_buf + read, 0, (MIXBUFSIZE - read) * sizeof(s16));
-    }
+	// Sound expansions
+	VRC6SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+	mmc5SoundHwUpdate(nes_apu_clock, ds_sound_freq);
+	ss5bSoundHwUpdate(nes_apu_clock, ds_sound_freq);
+	n163SoundHwUpdate(nes_apu_clock, ds_sound_freq);
 
 	for (int i = 0; i < MIXBUFSIZE; i++)
 	{
@@ -122,7 +111,6 @@ static void clearSoundBuffers(void)
 {
     memset(buffer_L, 0, sizeof(buffer_L));
     memset(buffer_R, 0, sizeof(buffer_R));
-	memset(temp_buf, 0, sizeof(temp_buf));
 	buff_write_cursor = 0;
 	if (master_blip)
 	{
@@ -297,8 +285,6 @@ void interrupthandler()
 
 void nesmain() 
 {
-	setDsSoundFreq();
-	
 	resetApu();
 
 	initsound();
