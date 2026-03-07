@@ -614,8 +614,10 @@ void menu_sound_br(void)
 		case 0: // Stereo
             __apu_flags ^= APU_STAT_STEREO;
             break;
-        case 1: // Pulse Mode
-            __apu_flags ^= APU_STAT_PULSE_HW;
+        case 1: // Dendy Mode
+            __apu_flags ^= APU_STAT_REGION_DDY;
+			updateApuSettings();
+			fifoSendValue32(FIFO_USER_08, FIFO_APU_RESET);
             break;
         case 2: // Duty
             __apu_flags ^= APU_STAT_DUTY_REV;
@@ -625,7 +627,7 @@ void menu_sound_br(void)
 		case 3: // Sound reset
 			fifoSendValue32(FIFO_USER_08, FIFO_SOUND_RESET);
 			break;
-    } 
+    }
     // Sync with ARM7 
     updateApuSettings();
 	fifoSendValue32(FIFO_USER_08, FIFO_UNPAUSE);
@@ -1316,9 +1318,9 @@ void menu_sound_start(void)
 	// consoletext(64*6 + 24, (__apu_flags & APU_STAT_REVERB) ? "[Reverb]" : " [Normal]", 0x1000);
 
 	// Pulse Channel Modes
-    consoletext(64*9 + 4, "<Pulse Ch. Modes>", 0);
+    consoletext(64*9 + 4, "<APU Special Modes>", 0);
 	// Pulse Render Mode
-    consoletext(64*14 + 4, (__apu_flags & APU_STAT_PULSE_HW) ? "[PSG HW]" : " [Soft]", 0x1000);
+    consoletext(64*14 + 4, (__apu_flags & APU_STAT_REGION_DDY) ? "  [ON]" : "  [OFF]", 0x1000);
 	// Pulse Duty Mode
     //consoletext(64*17 + 2, "<Pulse Ch. Duty>", 0);
     consoletext(64*14 + 24, (__apu_flags & APU_STAT_DUTY_REV) ? "[Reverse]" : "[Normal]", 0x1000);

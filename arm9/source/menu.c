@@ -555,14 +555,14 @@ struct menu_item menu_sound_items[] =
         .x = 1, .y = 5, .w = 8, .h = 2,
         .func = menu_sound_br
     },
-	{	// Render Mode (TODO: Remove)
-        .name = " Render",
+	{	// Dendy Override
+        .name = " Dendy\r  Mode",
         .type = 1,
         .x = 1, .y = 10, .w = 8, .h = 2,
         .func = menu_sound_br
     },
     {   // Pulse Duty Mode
-        .name = "  Duty",
+        .name = "  Duty\r Cycles",
         .type = 1,
         .x = 11, .y = 10, .w = 8, .h = 2,
         .func = menu_sound_br

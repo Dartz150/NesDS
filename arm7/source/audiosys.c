@@ -53,7 +53,7 @@ void applyApuStateMask(u32 mask)
 
 	// Set flags into a struct from the FIFO msg received
     apu_cfg.region_pal   = (mask & APU_STAT_REGION_PAL)    ? true : false;
-	apu_cfg.region_dendy = (mask & APU_STAT_REGION_DDY)    ? true : false; // TODO: ADD DENDY OVERRIDE
+	apu_cfg.region_dendy = (mask & APU_STAT_REGION_DDY)    ? true : false;
     apu_cfg.duty_reverse = (mask & APU_STAT_DUTY_REV)      ? true : false;
     apu_cfg.hw_render 	 = (mask & APU_STAT_PULSE_HW)      ? true : false;
     apu_cfg.stereo       = (mask & APU_STAT_STEREO)        ? true : false;

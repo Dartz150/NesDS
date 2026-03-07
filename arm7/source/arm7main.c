@@ -43,8 +43,8 @@ static int APU_paused;
 
 void setApuRegion()
 {
-	// Titles with sound expansions are always NTSC
-	if (has_vrc6 || has_fds || has_mmc5 || has_ss5b || has_n163 || has_vrc7)
+	// Dendy and titles with sound expansions (except ss5b) are always NTSC
+	if (has_vrc6 || has_fds || has_mmc5 || has_n163 || has_vrc7 || apu_cfg.region_dendy)
 	{
 		nes_apu_clock = NES_APU_NTSC;
 	}

@@ -1214,27 +1214,23 @@ void __fastcall APU4015Reg()
 // Update APU Status flags only when the APU resets
 static void apuSyncConfigCache(bool region_flag)
 {
-	// Set per-region table pointers
+    // Pulse Duty Cycle mode
 	square_duty_table = apu_cfg.duty_reverse
         ? square_duty_table_inverted
         : square_duty_table_normal;
 
-    noise_time_period_table = region_flag
-        ? noise_time_period_table_pal
-        : noise_time_period_table_ntsc;
-
-    dpcm_freq_table = region_flag
-        ? dpcm_freq_table_pal
-        : dpcm_freq_table_ntsc;
-
-    // Set Frame Sequencer Tables
+    // Set per-region table pointers
     if (region_flag)
     {
+        noise_time_period_table = noise_time_period_table_pal;
+        dpcm_freq_table = dpcm_freq_table_pal;
         frame_seq_4 = frame_seq_pal_4;
         frame_seq_5 = frame_seq_pal_5;
     }
     else
     {
+        noise_time_period_table = noise_time_period_table_ntsc;
+        dpcm_freq_table = dpcm_freq_table_ntsc;
         frame_seq_4 = frame_seq_ntsc_4;
         frame_seq_5 = frame_seq_ntsc_5;
     }
@@ -1244,7 +1240,8 @@ static void apuSyncConfigCache(bool region_flag)
 void __fastcall apuSoundInit(Uint32 nes_apu_clock, Uint32 ds_sound_freq)
 {
 	// Set APU region flags
-	apuSyncConfigCache(apu_cfg.region_pal);
+    // Dendy Frame sequencer remains as PAL even if its clock freq is set to NTSC.
+	apuSyncConfigCache((bool)(nes_apu_clock == NES_APU_PAL));
 
 	// blip_buf is now in charge of the NES -> DS rates.
 	nesApuBlipInit(nes_apu_clock, ds_sound_freq);

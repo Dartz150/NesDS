@@ -18,7 +18,7 @@ extern "C" {
 // Sound Config. bits
 #define APU_STAT_REGION_PAL     (1 << 0)  // 0: NTSC, 1: PAL
 #define APU_STAT_DUTY_REV       (1 << 1)  // 0: Normal, 1: Reverse
-#define APU_STAT_PULSE_HW       (1 << 2)  // 0: SW, 1: HW PSG
+#define APU_STAT_PULSE_HW       (1 << 2)  // 0: Deprecated, HW render is now the main engine
 #define APU_STAT_STEREO         (1 << 3)  // 0: Mono, 1: Stereo
 
 // Extra configs.

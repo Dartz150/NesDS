@@ -498,7 +498,8 @@ int keystr2int(const char *buf)
 	return ret;
 }
 
-#define APU_STAT_DEFAULT (APU_STAT_STEREO | APU_STAT_PULSE_HW)
+// Sound Configuration default flags if no .ini is found, change if necessary
+#define APU_STAT_DEFAULT	0
 
 int bootext() {
 	// interrupt 0: set my dir (inibuf)
